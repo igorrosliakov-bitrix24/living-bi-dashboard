@@ -10,6 +10,7 @@ import {
   serializeCookie,
   toSafeUser
 } from "./lib/oauth.js";
+import { isDashboardEntity, listDashboardEntities } from "./lib/entities.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const publicDir = join(__dirname, "public");
@@ -65,6 +66,16 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === "/api/session" && req.method === "GET") {
       return getSession(req, res);
+    }
+
+    if (url.pathname === "/api/entities" && req.method === "GET") {
+      return listEntities(res);
+    }
+
+    const fieldsMatch = url.pathname.match(/^\/api\/entities\/([a-z-]+)\/fields$/);
+
+    if (fieldsMatch && req.method === "GET") {
+      return getEntityFields(req, res, fieldsMatch[1]);
     }
 
     return serveStatic(url.pathname, res);
@@ -216,13 +227,57 @@ async function pollOAuth(req, res) {
 
 function getSession(req, res) {
   removeExpiredSessions();
-  const cookies = parseCookies(req.headers.cookie);
-  const session = cookies[dashboardSessionCookie] ? userSessions.get(cookies[dashboardSessionCookie]) : undefined;
+  const session = getUserSession(req);
 
   return sendJson(res, 200, {
     authenticated: Boolean(session),
     user: session?.user || null
   });
+}
+
+async function listEntities(res) {
+  if (!appKey) {
+    return sendJson(res, 400, { error: "missing_app_key", message: "Add VIBECODE_APP_KEY to .env" });
+  }
+
+  const response = await fetch(`${apiBase}/v1/guide`, {
+    headers: { "X-Api-Key": appKey, "Accept": "application/json" }
+  });
+  const payload = await readJson(response);
+
+  if (!response.ok) {
+    return sendJson(res, response.status, { error: "entity_guide_failed", message: "Не удалось получить список сущностей." });
+  }
+
+  return sendJson(res, 200, { entities: listDashboardEntities(payload.data?.entities) }, { "Cache-Control": "no-store" });
+}
+
+async function getEntityFields(req, res, entity) {
+  if (!isDashboardEntity(entity)) {
+    return sendJson(res, 400, { error: "unsupported_entity", message: "Эта сущность не входит в MVP." });
+  }
+
+  const session = getUserSession(req);
+
+  if (!session) {
+    return sendJson(res, 401, { error: "session_required", message: "Сначала войдите через Битрикс24." });
+  }
+
+  const response = await fetch(`${apiBase}/v1/${entity}/fields`, {
+    headers: {
+      "X-Api-Key": appKey,
+      "Authorization": `Bearer ${session.accessToken}`,
+      "Accept": "application/json"
+    }
+  });
+  const payload = await readJson(response);
+
+  return sendJson(res, response.status, payload);
+}
+
+function getUserSession(req) {
+  const cookies = parseCookies(req.headers.cookie);
+  return cookies[dashboardSessionCookie] ? userSessions.get(cookies[dashboardSessionCookie]) : undefined;
 }
 
 function removeExpiredSessions() {

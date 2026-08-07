@@ -8,11 +8,42 @@ const capabilityList = document.querySelector("#capabilityList");
 const technicalDetails = document.querySelector("#technicalDetails");
 const authButton = document.querySelector("#authButton");
 const authState = document.querySelector("#authState");
+const reportList = document.querySelector("#reportList");
 let oauthPollTimer;
 
 checkButton.addEventListener("click", checkConnection);
 authButton.addEventListener("click", startOAuth);
 checkSession();
+loadAvailableEntities();
+
+async function loadAvailableEntities() {
+  try {
+    const response = await fetch("/api/entities");
+    const payload = await response.json();
+
+    if (!response.ok || !Array.isArray(payload.entities)) {
+      throw new Error("Не удалось получить список сущностей.");
+    }
+
+    reportList.replaceChildren(
+      ...payload.entities.map((entity, index) => {
+        const button = document.createElement("button");
+        button.className = `report${index === 0 ? " active" : ""}`;
+        button.type = "button";
+
+        const title = document.createElement("span");
+        title.textContent = entity.title;
+        const description = document.createElement("small");
+        description.textContent = "Источник данных MVP";
+
+        button.append(title, description);
+        return button;
+      })
+    );
+  } catch (error) {
+    reportList.textContent = `Ошибка загрузки: ${error.message}`;
+  }
+}
 
 async function startOAuth() {
   authButton.disabled = true;
