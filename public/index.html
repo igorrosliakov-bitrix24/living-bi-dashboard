@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI-редактор BI-отчётов</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="topbar">
+        <div>
+          <p class="eyebrow">Битрикс24 BI</p>
+          <h1>AI-редактор отчётов</h1>
+        </div>
+        <button id="checkConnection" type="button">Обновить диагностику</button>
+      </section>
+
+      <section class="layout">
+        <aside class="panel">
+          <h2>Отчёты</h2>
+          <div class="report-list">
+            <button class="report active" type="button">
+              <span>Продажи по менеджерам</span>
+              <small>Черновой пример</small>
+            </button>
+            <button class="report" type="button">
+              <span>Конверсия по стадиям</span>
+              <small>Черновой пример</small>
+            </button>
+            <button class="report" type="button">
+              <span>Зависшие сделки</span>
+              <small>Черновой пример</small>
+            </button>
+          </div>
+        </aside>
+
+        <section class="workspace">
+          <div class="chart-area">
+            <div class="metric-row">
+              <article>
+                <span>Выручка</span>
+                <strong>12,8 млн ₽</strong>
+              </article>
+              <article>
+                <span>Средний чек</span>
+                <strong>184 тыс. ₽</strong>
+              </article>
+              <article>
+                <span>Сделки</span>
+                <strong>73</strong>
+              </article>
+            </div>
+
+            <div class="bars" aria-label="Черновая визуализация отчёта">
+              <span style="height: 42%"></span>
+              <span style="height: 72%"></span>
+              <span style="height: 56%"></span>
+              <span style="height: 88%"></span>
+              <span style="height: 63%"></span>
+              <span style="height: 47%"></span>
+            </div>
+          </div>
+
+          <form id="aiCommandForm" class="ai-panel">
+            <label for="aiCommand">Команда для ИИ</label>
+            <textarea id="aiCommand" rows="4" placeholder="Например: добавь фильтр по менеджерам и покажи средний чек"></textarea>
+            <button type="submit">Подготовить изменение</button>
+          </form>
+
+          <section class="diagnostics" aria-live="polite">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Вайбкод-платформа</p>
+                <h2>Подключение и возможности</h2>
+              </div>
+              <span id="connectionState" class="status status-neutral">Не проверено</span>
+            </div>
+
+            <p id="diagnosticsSummary" class="diagnostics-summary">
+              Проверим, что платформа видит портал и какие функции доступны этому ключу.
+            </p>
+
+            <dl id="capabilityList" class="capability-list" hidden></dl>
+
+            <details id="technicalDetails" class="technical-details" hidden>
+              <summary>Технический ответ платформы</summary>
+              <pre id="output" class="output"></pre>
+            </details>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
