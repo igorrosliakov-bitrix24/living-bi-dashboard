@@ -14,6 +14,7 @@ export default [
         document: "readonly",
         fetch: "readonly",
         process: "readonly",
+        ResizeObserver: "readonly",
         setInterval: "readonly",
         clearInterval: "readonly",
         window: "readonly"

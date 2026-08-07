@@ -6,13 +6,10 @@ const connectionState = document.querySelector("#connectionState");
 const diagnosticsSummary = document.querySelector("#diagnosticsSummary");
 const capabilityList = document.querySelector("#capabilityList");
 const technicalDetails = document.querySelector("#technicalDetails");
-const authButton = document.querySelector("#authButton");
 const authState = document.querySelector("#authState");
 const reportList = document.querySelector("#reportList");
-let oauthPollTimer;
 
 checkButton.addEventListener("click", checkConnection);
-authButton.addEventListener("click", startOAuth);
 checkSession();
 loadAvailableEntities();
 
@@ -45,58 +42,6 @@ async function loadAvailableEntities() {
   }
 }
 
-async function startOAuth() {
-  authButton.disabled = true;
-  authState.textContent = "Открываем вход...";
-
-  try {
-    const response = await fetch("/api/auth/start");
-    const payload = await response.json();
-
-    if (!response.ok || !payload.authorizationUrl) {
-      throw new Error(payload.message || "Не удалось начать авторизацию.");
-    }
-
-    const popup = window.open(payload.authorizationUrl, "bitrix24-oauth", "width=620,height=760");
-
-    if (!popup) {
-      window.location.assign(payload.authorizationUrl);
-      return;
-    }
-
-    authState.textContent = "Завершите вход в открывшемся окне";
-    oauthPollTimer = window.setInterval(checkOAuthStatus, 1500);
-  } catch (error) {
-    authState.textContent = `Ошибка входа: ${error.message}`;
-    authButton.disabled = false;
-  }
-}
-
-async function checkOAuthStatus() {
-  try {
-    const response = await fetch("/api/auth/status");
-    const payload = await response.json();
-
-    if (payload.status === "pending") {
-      return;
-    }
-
-    window.clearInterval(oauthPollTimer);
-    oauthPollTimer = undefined;
-
-    if (!response.ok || !payload.authenticated) {
-      throw new Error(payload.message || "Вход не завершён.");
-    }
-
-    renderSession(payload);
-  } catch (error) {
-    window.clearInterval(oauthPollTimer);
-    oauthPollTimer = undefined;
-    authState.textContent = `Ошибка входа: ${error.message}`;
-    authButton.disabled = false;
-  }
-}
-
 async function checkSession() {
   try {
     const response = await fetch("/api/session");
@@ -104,15 +49,23 @@ async function checkSession() {
 
     if (response.ok && payload.authenticated) {
       renderSession(payload);
+      return;
     }
+
+    if (payload.mode === "local_development") {
+      authState.textContent = "Локальный режим разработки";
+      return;
+    }
+
+    authState.textContent = "Откройте приложение через Битрикс24";
   } catch {
     authState.textContent = "Сессия пока недоступна";
   }
 }
 
 function renderSession(payload) {
-  authState.textContent = `Выполнен вход: ${payload.user.name}`;
-  authButton.hidden = true;
+  const name = payload.user?.name || "пользователь портала";
+  authState.textContent = `Gateway: ${name}`;
 }
 
 async function checkConnection() {
@@ -138,6 +91,12 @@ async function checkConnection() {
     technicalDetails.hidden = true;
   }
 }
+
+const resizeObserver = new ResizeObserver(() => {
+  window.parent.postMessage({ type: "vibe:resize", height: document.documentElement.scrollHeight }, "*");
+});
+
+resizeObserver.observe(document.documentElement);
 
 function renderDiagnostics(payload) {
   const { portal, tariff, capabilities } = payload.data;
