@@ -37,3 +37,7 @@ http://localhost:5174
 В продакшене приложение открывается через `https://vibecode.bitrix24.tech/v1/bitrix-handler`. Gateway определяет пользователя в Битрикс24 и отправляет запрос на сервер с `X-Vibe-Authorization`. Сервер передаёт эту сессию в Vibe API как `Authorization: Bearer`, добавляя ключ приложения из `VIBE_APP_KEY`. Токен не попадает в JavaScript страницы.
 
 Для запуска на Black Hole нужны Node 20, `npm ci --omit=dev`, команда старта `npm run start`, порт `3000` и переменная окружения `VIBE_APP_KEY`. Файл `.env` и `node_modules` в архив деплоя не включаются.
+
+## Тестовый деплой
+
+Тестовый экземпляр развёрнут по адресу `https://app-daffcac4becb.vibecode.bitrix24.tech`. Открывать его нужно через пункт «AI-редактор BI-отчётов» в левом меню тестового портала: прямой запрос к URL намеренно требует Gateway-сессию.
