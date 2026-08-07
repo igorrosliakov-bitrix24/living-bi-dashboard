@@ -32,6 +32,19 @@ textarea {
   max-width: 1180px;
 }
 
+.topbar-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.auth-state {
+  color: #526173;
+  font-size: 14px;
+}
+
 .eyebrow {
   margin: 0 0 6px;
   color: #4f6f8f;
@@ -286,6 +299,16 @@ textarea {
   .topbar {
     align-items: stretch;
     display: grid;
+  }
+
+  .topbar-actions {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .auth-state {
+    text-align: center;
   }
 
   .metric-row {
