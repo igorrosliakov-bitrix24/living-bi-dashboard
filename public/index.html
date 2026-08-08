@@ -29,28 +29,15 @@
 
         <section class="workspace">
           <div class="chart-area">
-            <div class="metric-row">
+            <div id="metricRow" class="metric-row" aria-live="polite">
               <article>
-                <span>Выручка</span>
-                <strong>12,8 млн ₽</strong>
-              </article>
-              <article>
-                <span>Средний чек</span>
-                <strong>184 тыс. ₽</strong>
-              </article>
-              <article>
-                <span>Сделки</span>
-                <strong>73</strong>
+                <span>Загружаем данные</span>
+                <strong>...</strong>
               </article>
             </div>
 
-            <div class="bars" aria-label="Черновая визуализация отчёта">
-              <span style="height: 42%"></span>
-              <span style="height: 72%"></span>
-              <span style="height: 56%"></span>
-              <span style="height: 88%"></span>
-              <span style="height: 63%"></span>
-              <span style="height: 47%"></span>
+            <div id="chartBars" class="bars" aria-label="График сделок по стадиям">
+              <span class="bars-loading">Загружаем агрегаты...</span>
             </div>
           </div>
 

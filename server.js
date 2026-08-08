@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DashboardStore } from "./lib/dashboard-store.js";
+import { buildAggregateRequest, normalizeWidgetData } from "./lib/dashboard-data.js";
 import { isDashboardEntity, listDashboardEntities } from "./lib/entities.js";
 import { buildVibeHeaders, getGatewayAuthorization, getGatewayUser } from "./lib/gateway.js";
 
@@ -52,6 +53,10 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === "/api/dashboard" && req.method === "GET") {
       return sendJson(res, 200, { dashboard: dashboardStore.getCurrent() }, { "Cache-Control": "no-store" });
+    }
+
+    if (url.pathname === "/api/dashboard/data" && req.method === "GET") {
+      return getDashboardData(req, res);
     }
 
     if (url.pathname === "/api/entities" && req.method === "GET") {
@@ -161,6 +166,40 @@ function sendGatewayRequired(res) {
     message: "Откройте приложение через размещение в Битрикс24, чтобы Gateway передал сессию пользователя.",
     reopen: true
   });
+}
+
+async function getDashboardData(req, res) {
+  const headers = resolveVibeHeaders(req);
+
+  if (!headers) {
+    return sendGatewayRequired(res);
+  }
+
+  const dashboard = dashboardStore.getCurrent();
+  const widgetResponses = await Promise.all(dashboard.widgets.map(async (widget) => {
+    const response = await fetch(`${apiBase}/v1/${widget.entity}/aggregate`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify(buildAggregateRequest(widget))
+    });
+    const payload = await readJson(response);
+
+    return { response, widget, payload };
+  }));
+  const failed = widgetResponses.find(({ response }) => !response.ok);
+
+  if (failed) {
+    return sendJson(res, failed.response.status, {
+      error: "dashboard_data_failed",
+      message: "Не удалось получить агрегаты для дашборда.",
+      details: failed.payload.error?.code || "vibe_api_error"
+    });
+  }
+
+  return sendJson(res, 200, {
+    dashboardVersion: dashboard.version,
+    widgets: widgetResponses.map(({ widget, payload }) => normalizeWidgetData(widget, payload))
+  }, { "Cache-Control": "no-store" });
 }
 
 async function serveStatic(pathname, res) {

@@ -8,10 +8,13 @@ const capabilityList = document.querySelector("#capabilityList");
 const technicalDetails = document.querySelector("#technicalDetails");
 const authState = document.querySelector("#authState");
 const reportList = document.querySelector("#reportList");
+const metricRow = document.querySelector("#metricRow");
+const chartBars = document.querySelector("#chartBars");
 
 checkButton.addEventListener("click", checkConnection);
 checkSession();
 loadAvailableEntities();
+loadDashboardData();
 
 async function loadAvailableEntities() {
   try {
@@ -40,6 +43,66 @@ async function loadAvailableEntities() {
   } catch (error) {
     reportList.textContent = `Ошибка загрузки: ${error.message}`;
   }
+}
+
+async function loadDashboardData() {
+  try {
+    const response = await fetch("/api/dashboard/data");
+    const payload = await response.json();
+
+    if (!response.ok || !Array.isArray(payload.widgets)) {
+      throw new Error(payload.message || "Не удалось получить агрегаты.");
+    }
+
+    renderDashboardData(payload.widgets);
+  } catch (error) {
+    chartBars.textContent = `Данные пока недоступны: ${error.message}`;
+  }
+}
+
+function renderDashboardData(widgets) {
+  const kpis = widgets.filter((widget) => widget.type === "kpi");
+  const bar = widgets.find((widget) => widget.type === "bar");
+
+  metricRow.replaceChildren(
+    ...kpis.map((widget) => {
+      const card = document.createElement("article");
+      const title = document.createElement("span");
+      title.textContent = widget.title;
+      const value = document.createElement("strong");
+      value.textContent = formatNumber(widget.value);
+      card.append(title, value);
+      return card;
+    })
+  );
+
+  if (!bar) {
+    chartBars.textContent = "Для текущего отчёта нет столбчатого графика.";
+    return;
+  }
+
+  const maxValue = Math.max(...bar.groups.map((group) => group.value), 1);
+  chartBars.replaceChildren(
+    ...bar.groups.map((group) => {
+      const item = document.createElement("div");
+      item.className = "bar-item";
+      const barValue = document.createElement("span");
+      barValue.style.height = `${Math.max((group.value / maxValue) * 100, 8)}%`;
+      barValue.title = `${group.label}: ${formatNumber(group.value)}`;
+      const label = document.createElement("small");
+      label.textContent = group.label;
+      item.append(barValue, label);
+      return item;
+    })
+  );
+
+  if (bar.truncated) {
+    diagnosticsSummary.textContent = "Часть числовых агрегатов рассчитана по ограниченной выборке.";
+  }
+}
+
+function formatNumber(value) {
+  return new Intl.NumberFormat("ru-RU").format(value);
 }
 
 async function checkSession() {
