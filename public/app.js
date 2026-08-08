@@ -23,6 +23,9 @@ const aiProposalPanel = document.querySelector("#aiProposal");
 const aiSummary = document.querySelector("#aiSummary");
 const aiChanges = document.querySelector("#aiChanges");
 const applyAiProposal = document.querySelector("#applyAiProposal");
+const versionCount = document.querySelector("#versionCount");
+const versionList = document.querySelector("#versionList");
+const versionMessage = document.querySelector("#versionMessage");
 let dashboardSpec;
 let aiProposal;
 
@@ -131,10 +134,89 @@ async function loadDashboardSpec() {
 
     dashboardSpec = payload.dashboard;
     renderDashboardEditor();
+    await loadVersionHistory();
   } catch (error) {
     editorStatus.textContent = "Ошибка загрузки";
     editorStatus.className = "status status-error";
     editorMessage.textContent = error.message;
+  }
+}
+
+async function loadVersionHistory() {
+  try {
+    const response = await fetch("/api/dashboard/versions");
+    const payload = await response.json();
+
+    if (!response.ok || !Array.isArray(payload.versions)) {
+      throw new Error(payload.message || "Не удалось загрузить историю версий.");
+    }
+
+    renderVersionHistory(payload.versions);
+  } catch (error) {
+    versionCount.textContent = "Ошибка";
+    versionCount.className = "status status-error";
+    versionMessage.textContent = error.message;
+  }
+}
+
+function renderVersionHistory(versions) {
+  versionCount.textContent = `${versions.length} ${pluralizeVersion(versions.length)}`;
+  versionCount.className = "status status-neutral";
+  versionList.replaceChildren(...versions.map((version) => {
+    const item = document.createElement("li");
+    item.className = "version-item";
+    const details = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = `Версия ${version.version}${version.current ? " (текущая)" : ""}`;
+    const description = document.createElement("small");
+    description.textContent = `${version.title}; виджетов: ${version.widgetCount}`;
+    details.append(title, description);
+    item.append(details);
+
+    if (!version.current) {
+      const restoreButton = document.createElement("button");
+      restoreButton.type = "button";
+      restoreButton.className = "secondary-button";
+      restoreButton.textContent = "Восстановить";
+      restoreButton.addEventListener("click", () => restoreDashboard(version.version));
+      item.append(restoreButton);
+    }
+
+    return item;
+  }));
+}
+
+async function restoreDashboard(version) {
+  if (!dashboardSpec) {
+    return;
+  }
+
+  versionMessage.textContent = `Восстанавливаем версию ${version}...`;
+
+  try {
+    const response = await fetch("/api/dashboard/restore", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version, expectedVersion: dashboardSpec.version })
+    });
+    const payload = await response.json();
+
+    if (response.status === 409) {
+      await loadDashboardSpec();
+      versionMessage.textContent = "Отчёт уже изменился. Загружена актуальная история.";
+      return;
+    }
+
+    if (!response.ok || !payload.saved) {
+      throw new Error(payload.message || "Не удалось восстановить версию.");
+    }
+
+    dashboardSpec = payload.dashboard;
+    renderDashboardEditor();
+    await Promise.all([loadDashboardData(), loadVersionHistory()]);
+    versionMessage.textContent = `Создана версия ${dashboardSpec.version} на основе версии ${version}.`;
+  } catch (error) {
+    versionMessage.textContent = error.message;
   }
 }
 
@@ -196,7 +278,19 @@ async function persistDashboard(nextDashboard, messageTarget) {
 
   dashboardSpec = payload.dashboard;
   renderDashboardEditor();
-  await loadDashboardData();
+  await Promise.all([loadDashboardData(), loadVersionHistory()]);
+}
+
+function pluralizeVersion(count) {
+  if (count % 10 === 1 && count % 100 !== 11) {
+    return "версия";
+  }
+
+  if (count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 10 || count % 100 >= 20)) {
+    return "версии";
+  }
+
+  return "версий";
 }
 
 function formatNumber(value) {

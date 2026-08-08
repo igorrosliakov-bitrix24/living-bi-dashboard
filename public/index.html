@@ -74,6 +74,18 @@
             </div>
           </form>
 
+          <section class="version-panel" aria-live="polite">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">История</p>
+                <h2>Версии отчёта</h2>
+              </div>
+              <span id="versionCount" class="status status-neutral">Загружается</span>
+            </div>
+            <ol id="versionList" class="version-list"></ol>
+            <p id="versionMessage" class="editor-message"></p>
+          </section>
+
           <form id="aiCommandForm" class="ai-panel">
             <label for="aiCommand">Команда для ИИ</label>
             <textarea id="aiCommand" rows="4" placeholder="Например: отсортируй стадии сделок по возрастанию"></textarea>

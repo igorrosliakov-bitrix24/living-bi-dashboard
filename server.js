@@ -61,6 +61,14 @@ const server = createServer(async (req, res) => {
       return saveDashboard(req, res);
     }
 
+    if (url.pathname === "/api/dashboard/versions" && req.method === "GET") {
+      return sendJson(res, 200, { versions: dashboardStore.listVersions() }, { "Cache-Control": "no-store" });
+    }
+
+    if (url.pathname === "/api/dashboard/restore" && req.method === "POST") {
+      return restoreDashboard(req, res);
+    }
+
     if (url.pathname === "/api/dashboard/ai-draft" && req.method === "POST") {
       return createAiDraft(req, res);
     }
@@ -269,6 +277,49 @@ async function createAiDraft(req, res) {
 
     if (error.name === "TimeoutError") {
       return sendJson(res, 504, { error: "ai_timeout", message: "ИИ не успел подготовить черновик. Повторите запрос." });
+    }
+
+    throw error;
+  }
+}
+
+async function restoreDashboard(req, res) {
+  if (!canEditDashboard(req, res)) {
+    return;
+  }
+
+  if (!req.headers["content-type"]?.startsWith("application/json")) {
+    return sendJson(res, 415, { error: "unsupported_content_type", message: "Передайте номер версии в формате JSON." });
+  }
+
+  try {
+    const body = await readJsonBody(req);
+
+    if (!Number.isInteger(body?.version) || !Number.isInteger(body?.expectedVersion)) {
+      return sendJson(res, 400, { error: "invalid_restore", message: "Нужны целочисленные version и expectedVersion." });
+    }
+
+    const result = dashboardStore.restore(body.version, body.expectedVersion);
+
+    if (!result.saved && result.error === "version_conflict") {
+      return sendJson(res, 409, result);
+    }
+
+    if (!result.saved && result.error === "version_not_found") {
+      return sendJson(res, 404, result);
+    }
+
+    if (!result.saved) {
+      return sendJson(res, 400, result);
+    }
+
+    return sendJson(res, 200, result, { "Cache-Control": "no-store" });
+  } catch (error) {
+    if (error instanceof RequestBodyError) {
+      return sendJson(res, error.code === "body_too_large" ? 413 : 400, {
+        error: error.code,
+        message: error.message
+      });
     }
 
     throw error;

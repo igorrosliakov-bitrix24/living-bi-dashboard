@@ -231,6 +231,51 @@ button:hover {
   padding-top: 18px;
 }
 
+.version-panel {
+  border-top: 1px solid #e4e9ef;
+  display: grid;
+  gap: 12px;
+  padding-top: 18px;
+}
+
+.version-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.version-item {
+  align-items: center;
+  border: 1px solid #e4e9ef;
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+
+.version-item div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.version-item small {
+  color: #637083;
+  overflow-wrap: anywhere;
+}
+
+.secondary-button {
+  background: #eef4ff;
+  color: #315d9f;
+}
+
+.secondary-button:hover {
+  background: #dce9ff;
+}
+
 .editor-fields {
   display: grid;
   gap: 12px;

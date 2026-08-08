@@ -34,3 +34,21 @@ test("prevents stale and invalid writes", () => {
   assert.equal(result.error, "invalid_spec");
   assert.ok(result.errors.includes("widgets должен содержать от 1 до 12 виджетов."));
 });
+
+test("lists versions and restores a prior version as a new record", () => {
+  const store = new DashboardStore();
+  const changed = store.getCurrent();
+  changed.title = "Продажи за квартал";
+  store.save(changed, 1);
+
+  assert.deepEqual(store.listVersions(), [
+    { version: 2, title: "Продажи за квартал", widgetCount: 2, current: true },
+    { version: 1, title: "Продажи: обзор", widgetCount: 2, current: false }
+  ]);
+
+  const restored = store.restore(1, 2);
+  assert.equal(restored.saved, true);
+  assert.equal(restored.dashboard.version, 3);
+  assert.equal(restored.dashboard.title, "Продажи: обзор");
+  assert.deepEqual(store.restore(99, 3), { saved: false, error: "version_not_found" });
+});
