@@ -3,7 +3,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DashboardStore } from "./lib/dashboard-store.js";
+import { createInitialDashboard } from "./lib/dashboard-spec.js";
+import { FileDashboardStore } from "./lib/file-dashboard-store.js";
 import { buildAggregateRequest, normalizeWidgetData } from "./lib/dashboard-data.js";
 import { isDashboardEntity, listDashboardEntities } from "./lib/entities.js";
 import { buildVibeHeaders, getGatewayAuthorization, getGatewayUser } from "./lib/gateway.js";
@@ -21,7 +22,13 @@ const host = process.env.HOST || (isProduction ? "0.0.0.0" : "127.0.0.1");
 const apiBase = process.env.VIBECODE_API_BASE || "https://vibecode.bitrix24.tech";
 const apiKey = process.env.VIBECODE_API_KEY || "";
 const appKey = process.env.VIBE_APP_KEY || process.env.VIBECODE_APP_KEY || "";
-const dashboardStore = new DashboardStore();
+const dashboardStatePath = process.env.DASHBOARD_STATE_PATH || join(
+  isProduction ? "/data/living-bi-dashboard" : join(__dirname, ".data"),
+  "dashboard-state.json"
+);
+const dashboardStore = new FileDashboardStore({ initialSpec: createInitialDashboard(), statePath: dashboardStatePath });
+
+await dashboardStore.load();
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -205,14 +212,14 @@ async function saveDashboard(req, res) {
       });
     }
 
-    const result = dashboardStore.save(body.dashboard, body.expectedVersion);
+    const result = await dashboardStore.save(body.dashboard, body.expectedVersion);
 
     if (!result.saved && result.error === "version_conflict") {
       return sendJson(res, 409, result);
     }
 
     if (!result.saved) {
-      return sendJson(res, 400, result);
+      return sendJson(res, result.error === "storage_unavailable" ? 503 : 400, result);
     }
 
     return sendJson(res, 200, result, { "Cache-Control": "no-store" });
@@ -299,7 +306,7 @@ async function restoreDashboard(req, res) {
       return sendJson(res, 400, { error: "invalid_restore", message: "Нужны целочисленные version и expectedVersion." });
     }
 
-    const result = dashboardStore.restore(body.version, body.expectedVersion);
+    const result = await dashboardStore.restore(body.version, body.expectedVersion);
 
     if (!result.saved && result.error === "version_conflict") {
       return sendJson(res, 409, result);
@@ -310,7 +317,7 @@ async function restoreDashboard(req, res) {
     }
 
     if (!result.saved) {
-      return sendJson(res, 400, result);
+      return sendJson(res, result.error === "storage_unavailable" ? 503 : 400, result);
     }
 
     return sendJson(res, 200, result, { "Cache-Control": "no-store" });
