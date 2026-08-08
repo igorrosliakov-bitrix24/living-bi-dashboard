@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DashboardStore } from "./lib/dashboard-store.js";
 import { isDashboardEntity, listDashboardEntities } from "./lib/entities.js";
 import { buildVibeHeaders, getGatewayAuthorization, getGatewayUser } from "./lib/gateway.js";
 
@@ -17,6 +18,7 @@ const host = process.env.HOST || (isProduction ? "0.0.0.0" : "127.0.0.1");
 const apiBase = process.env.VIBECODE_API_BASE || "https://vibecode.bitrix24.tech";
 const apiKey = process.env.VIBECODE_API_KEY || "";
 const appKey = process.env.VIBE_APP_KEY || process.env.VIBECODE_APP_KEY || "";
+const dashboardStore = new DashboardStore();
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -46,6 +48,10 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === "/api/session" && req.method === "GET") {
       return getSession(req, res);
+    }
+
+    if (url.pathname === "/api/dashboard" && req.method === "GET") {
+      return sendJson(res, 200, { dashboard: dashboardStore.getCurrent() }, { "Cache-Control": "no-store" });
     }
 
     if (url.pathname === "/api/entities" && req.method === "GET") {

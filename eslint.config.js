@@ -16,6 +16,7 @@ export default [
         process: "readonly",
         ResizeObserver: "readonly",
         setInterval: "readonly",
+        structuredClone: "readonly",
         clearInterval: "readonly",
         window: "readonly"
       }
