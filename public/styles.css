@@ -266,6 +266,25 @@ textarea {
   margin: 0;
 }
 
+.ai-proposal {
+  border-top: 1px solid #e4e9ef;
+  display: grid;
+  gap: 10px;
+  padding-top: 16px;
+}
+
+.ai-proposal .eyebrow {
+  margin-bottom: 4px;
+}
+
+.ai-changes {
+  color: #334155;
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+}
+
 .diagnostics {
   border-top: 1px solid #e4e9ef;
   display: grid;

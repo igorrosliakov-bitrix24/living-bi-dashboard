@@ -18,7 +18,13 @@ const chartTitleInput = document.querySelector("#chartTitleInput");
 const chartSortInput = document.querySelector("#chartSortInput");
 const editorStatus = document.querySelector("#editorStatus");
 const editorMessage = document.querySelector("#editorMessage");
+const aiStatus = document.querySelector("#aiStatus");
+const aiProposalPanel = document.querySelector("#aiProposal");
+const aiSummary = document.querySelector("#aiSummary");
+const aiChanges = document.querySelector("#aiChanges");
+const applyAiProposal = document.querySelector("#applyAiProposal");
 let dashboardSpec;
+let aiProposal;
 
 checkButton.addEventListener("click", checkConnection);
 checkSession();
@@ -159,38 +165,39 @@ visualEditor.addEventListener("submit", async (event) => {
     bar.options = { ...bar.options, sort: chartSortInput.value };
   }
 
-  editorStatus.textContent = "Сохраняем";
-  editorStatus.className = "status status-neutral";
-  editorMessage.textContent = "";
-
   try {
-    const response = await fetch("/api/dashboard", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dashboard: nextDashboard, expectedVersion: dashboardSpec.version })
-    });
-    const payload = await response.json();
-
-    if (response.status === 409) {
-      await loadDashboardSpec();
-      editorMessage.textContent = "Кто-то уже сохранил другую версию. Загружены актуальные настройки.";
-      return;
-    }
-
-    if (!response.ok || !payload.saved) {
-      throw new Error(payload.message || "Изменение не сохранено.");
-    }
-
-    dashboardSpec = payload.dashboard;
-    renderDashboardEditor();
-    await loadDashboardData();
-    editorMessage.textContent = "Новая версия сохранена.";
+    await persistDashboard(nextDashboard, editorMessage);
   } catch (error) {
     editorStatus.textContent = "Ошибка сохранения";
     editorStatus.className = "status status-error";
     editorMessage.textContent = error.message;
   }
 });
+
+async function persistDashboard(nextDashboard, messageTarget) {
+  editorStatus.textContent = "Сохраняем";
+  editorStatus.className = "status status-neutral";
+  messageTarget.textContent = "";
+  const response = await fetch("/api/dashboard", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dashboard: nextDashboard, expectedVersion: dashboardSpec.version })
+  });
+  const payload = await response.json();
+
+  if (response.status === 409) {
+    await loadDashboardSpec();
+    throw new Error("Кто-то уже сохранил другую версию. Загружены актуальные настройки.");
+  }
+
+  if (!response.ok || !payload.saved) {
+    throw new Error(payload.message || "Изменение не сохранено.");
+  }
+
+  dashboardSpec = payload.dashboard;
+  renderDashboardEditor();
+  await loadDashboardData();
+}
 
 function formatNumber(value) {
   return new Intl.NumberFormat("ru-RU").format(value);
@@ -289,18 +296,69 @@ function setConnectionState(text, state) {
   connectionState.className = `status status-${state}`;
 }
 
-form.addEventListener("submit", (event) => {
+form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const command = textarea.value.trim();
 
   if (!command) {
-    output.textContent = "Введите команду для ИИ.";
+    aiStatus.textContent = "Введите команду для ИИ.";
     return;
   }
 
-  diagnosticsSummary.textContent = `Команда сохранена для будущего шага: «${command}». Подключение AI-модели и BI API ещё впереди.`;
-  technicalDetails.open = false;
-  output.textContent = JSON.stringify({ status: "draft", command }, null, 2);
-  technicalDetails.hidden = false;
+  if (!dashboardSpec) {
+    aiStatus.textContent = "Настройки отчёта ещё загружаются.";
+    return;
+  }
+
+  aiStatus.textContent = "BitrixGPT готовит черновик...";
+  aiProposalPanel.hidden = true;
+
+  try {
+    const response = await fetch("/api/dashboard/ai-draft", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command, expectedVersion: dashboardSpec.version })
+    });
+    const payload = await response.json();
+
+    if (!response.ok || !payload.proposal) {
+      throw new Error(payload.message || "ИИ не подготовил изменение.");
+    }
+
+    aiProposal = payload.proposal;
+    aiSummary.textContent = aiProposal.summary;
+    aiChanges.replaceChildren(...aiProposal.changes.map((change) => {
+      const item = document.createElement("li");
+      item.textContent = change;
+      return item;
+    }));
+    aiStatus.textContent = "Черновик готов. Проверьте изменения перед применением.";
+    aiProposalPanel.hidden = false;
+  } catch (error) {
+    aiStatus.textContent = error.message;
+  }
+});
+
+applyAiProposal.addEventListener("click", async () => {
+  if (!aiProposal) {
+    return;
+  }
+
+  if (aiProposal.dashboard.version !== dashboardSpec.version) {
+    aiStatus.textContent = "Настройки отчёта уже изменились. Подготовьте предложение ИИ заново.";
+    aiProposalPanel.hidden = true;
+    aiProposal = undefined;
+    return;
+  }
+
+  try {
+    await persistDashboard(aiProposal.dashboard, aiStatus);
+    aiStatus.textContent = "Предложение ИИ применено как новая версия.";
+    aiProposalPanel.hidden = true;
+    textarea.value = "";
+    aiProposal = undefined;
+  } catch (error) {
+    aiStatus.textContent = error.message;
+  }
 });

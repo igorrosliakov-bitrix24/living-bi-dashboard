@@ -8,6 +8,7 @@ import { buildAggregateRequest, normalizeWidgetData } from "./lib/dashboard-data
 import { isDashboardEntity, listDashboardEntities } from "./lib/entities.js";
 import { buildVibeHeaders, getGatewayAuthorization, getGatewayUser } from "./lib/gateway.js";
 import { RequestBodyError, readJsonBody } from "./lib/request-body.js";
+import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, extractAiProposal } from "./lib/ai-dashboard.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const publicDir = join(__dirname, "public");
@@ -58,6 +59,10 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === "/api/dashboard" && req.method === "POST") {
       return saveDashboard(req, res);
+    }
+
+    if (url.pathname === "/api/dashboard/ai-draft" && req.method === "POST") {
+      return createAiDraft(req, res);
     }
 
     if (url.pathname === "/api/dashboard/data" && req.method === "GET") {
@@ -174,11 +179,8 @@ function sendGatewayRequired(res) {
 }
 
 async function saveDashboard(req, res) {
-  if (isProduction && (!getGatewayAuthorization(req.headers) || getGatewayUser(req.headers)?.role !== "ADMIN")) {
-    return sendJson(res, 403, {
-      error: "dashboard_edit_forbidden",
-      message: "Редактировать отчёт может администратор, открывший приложение через Битрикс24."
-    });
+  if (!canEditDashboard(req, res)) {
+    return;
   }
 
   if (!req.headers["content-type"]?.startsWith("application/json")) {
@@ -216,6 +218,73 @@ async function saveDashboard(req, res) {
 
     throw error;
   }
+}
+
+async function createAiDraft(req, res) {
+  if (!canEditDashboard(req, res)) {
+    return;
+  }
+
+  if (!req.headers["content-type"]?.startsWith("application/json")) {
+    return sendJson(res, 415, { error: "unsupported_content_type", message: "Передайте команду в формате JSON." });
+  }
+
+  try {
+    const body = await readJsonBody(req);
+    const current = dashboardStore.getCurrent();
+
+    if (!Number.isInteger(body?.expectedVersion) || body.expectedVersion !== current.version) {
+      return sendJson(res, 409, { error: "version_conflict", currentVersion: current.version });
+    }
+
+    const headers = resolveVibeHeaders(req);
+
+    if (!headers) {
+      return sendGatewayRequired(res);
+    }
+
+    const response = await fetch(`${apiBase}/v1/chat/completions`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify(createAiCompletionRequest(current, body.command)),
+      signal: AbortSignal.timeout(20_000)
+    });
+    const payload = await readJson(response);
+
+    if (!response.ok) {
+      return sendJson(res, response.status, {
+        error: "ai_request_failed",
+        message: payload.error?.message || "Не удалось подготовить изменение с помощью ИИ."
+      });
+    }
+
+    const proposal = extractAiProposal(payload, current.version);
+    return sendJson(res, 200, {
+      proposal: { ...proposal, changes: buildDashboardDiff(current, proposal.dashboard) }
+    }, { "Cache-Control": "no-store" });
+  } catch (error) {
+    if (error instanceof RequestBodyError || error instanceof AiDashboardError) {
+      return sendJson(res, 400, { error: error.code, message: error.message });
+    }
+
+    if (error.name === "TimeoutError") {
+      return sendJson(res, 504, { error: "ai_timeout", message: "ИИ не успел подготовить черновик. Повторите запрос." });
+    }
+
+    throw error;
+  }
+}
+
+function canEditDashboard(req, res) {
+  if (!isProduction || (getGatewayAuthorization(req.headers) && getGatewayUser(req.headers)?.role === "ADMIN")) {
+    return true;
+  }
+
+  sendJson(res, 403, {
+    error: "dashboard_edit_forbidden",
+    message: "Редактировать отчёт может администратор, открывший приложение через Битрикс24."
+  });
+  return false;
 }
 
 async function getDashboardData(req, res) {

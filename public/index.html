@@ -76,8 +76,18 @@
 
           <form id="aiCommandForm" class="ai-panel">
             <label for="aiCommand">Команда для ИИ</label>
-            <textarea id="aiCommand" rows="4" placeholder="Например: добавь фильтр по менеджерам и покажи средний чек"></textarea>
+            <textarea id="aiCommand" rows="4" placeholder="Например: отсортируй стадии сделок по возрастанию"></textarea>
             <button type="submit">Подготовить изменение</button>
+            <p id="aiStatus" class="editor-message" aria-live="polite"></p>
+            <section id="aiProposal" class="ai-proposal" hidden>
+              <div>
+                <p class="eyebrow">Черновик ИИ</p>
+                <h2>Изменения к применению</h2>
+              </div>
+              <p id="aiSummary" class="editor-message"></p>
+              <ul id="aiChanges" class="ai-changes"></ul>
+              <button id="applyAiProposal" type="button">Применить предложение</button>
+            </section>
           </form>
 
           <section class="diagnostics" aria-live="polite">

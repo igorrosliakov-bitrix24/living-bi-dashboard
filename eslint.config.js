@@ -8,6 +8,7 @@ export default [
       ecmaVersion: "latest",
       sourceType: "module",
       globals: {
+        AbortSignal: "readonly",
         Buffer: "readonly",
         URL: "readonly",
         URLSearchParams: "readonly",
