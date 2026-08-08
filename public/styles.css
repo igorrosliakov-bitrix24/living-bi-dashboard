@@ -14,6 +14,8 @@ body {
 }
 
 button,
+input,
+select,
 textarea {
   font: inherit;
 }
@@ -140,6 +142,13 @@ button:hover {
   padding: 18px;
 }
 
+.dashboard-name {
+  color: #315d9f;
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 16px;
+}
+
 .metric-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -176,6 +185,10 @@ button:hover {
   padding: 0 8px;
 }
 
+.chart-title {
+  margin: 0 0 12px;
+}
+
 .bar-item {
   align-items: stretch;
   display: flex;
@@ -209,6 +222,48 @@ button:hover {
   display: grid;
   gap: 10px;
   padding: 16px;
+}
+
+.editor-panel {
+  border-top: 1px solid #e4e9ef;
+  display: grid;
+  gap: 14px;
+  padding-top: 18px;
+}
+
+.editor-fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.editor-fields label,
+.ai-panel label {
+  display: grid;
+  font-weight: 700;
+  gap: 7px;
+}
+
+input,
+select,
+textarea {
+  border: 1px solid #cdd6e0;
+  border-radius: 8px;
+  color: #18212f;
+  min-height: 42px;
+  padding: 10px 12px;
+}
+
+.editor-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.editor-message {
+  color: #526173;
+  margin: 0;
 }
 
 .diagnostics {
@@ -285,15 +340,8 @@ button:hover {
   font-weight: 700;
 }
 
-.ai-panel label {
-  font-weight: 700;
-}
-
 textarea {
-  border: 1px solid #cdd6e0;
-  border-radius: 8px;
   min-height: 104px;
-  padding: 12px;
   resize: vertical;
 }
 
@@ -334,6 +382,10 @@ textarea {
   }
 
   .metric-row {
+    grid-template-columns: 1fr;
+  }
+
+  .editor-fields {
     grid-template-columns: 1fr;
   }
 

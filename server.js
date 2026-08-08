@@ -7,6 +7,7 @@ import { DashboardStore } from "./lib/dashboard-store.js";
 import { buildAggregateRequest, normalizeWidgetData } from "./lib/dashboard-data.js";
 import { isDashboardEntity, listDashboardEntities } from "./lib/entities.js";
 import { buildVibeHeaders, getGatewayAuthorization, getGatewayUser } from "./lib/gateway.js";
+import { RequestBodyError, readJsonBody } from "./lib/request-body.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const publicDir = join(__dirname, "public");
@@ -53,6 +54,10 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === "/api/dashboard" && req.method === "GET") {
       return sendJson(res, 200, { dashboard: dashboardStore.getCurrent() }, { "Cache-Control": "no-store" });
+    }
+
+    if (url.pathname === "/api/dashboard" && req.method === "POST") {
+      return saveDashboard(req, res);
     }
 
     if (url.pathname === "/api/dashboard/data" && req.method === "GET") {
@@ -166,6 +171,51 @@ function sendGatewayRequired(res) {
     message: "Откройте приложение через размещение в Битрикс24, чтобы Gateway передал сессию пользователя.",
     reopen: true
   });
+}
+
+async function saveDashboard(req, res) {
+  if (isProduction && (!getGatewayAuthorization(req.headers) || getGatewayUser(req.headers)?.role !== "ADMIN")) {
+    return sendJson(res, 403, {
+      error: "dashboard_edit_forbidden",
+      message: "Редактировать отчёт может администратор, открывший приложение через Битрикс24."
+    });
+  }
+
+  if (!req.headers["content-type"]?.startsWith("application/json")) {
+    return sendJson(res, 415, { error: "unsupported_content_type", message: "Передайте изменение в формате JSON." });
+  }
+
+  try {
+    const body = await readJsonBody(req);
+
+    if (!Number.isInteger(body?.expectedVersion) || !body.dashboard || typeof body.dashboard !== "object") {
+      return sendJson(res, 400, {
+        error: "invalid_update",
+        message: "Нужны dashboard и целочисленная expectedVersion."
+      });
+    }
+
+    const result = dashboardStore.save(body.dashboard, body.expectedVersion);
+
+    if (!result.saved && result.error === "version_conflict") {
+      return sendJson(res, 409, result);
+    }
+
+    if (!result.saved) {
+      return sendJson(res, 400, result);
+    }
+
+    return sendJson(res, 200, result, { "Cache-Control": "no-store" });
+  } catch (error) {
+    if (error instanceof RequestBodyError) {
+      return sendJson(res, error.code === "body_too_large" ? 413 : 400, {
+        error: error.code,
+        message: error.message
+      });
+    }
+
+    throw error;
+  }
 }
 
 async function getDashboardData(req, res) {

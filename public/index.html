@@ -29,6 +29,7 @@
 
         <section class="workspace">
           <div class="chart-area">
+            <p id="dashboardName" class="dashboard-name">Загружаем отчёт...</p>
             <div id="metricRow" class="metric-row" aria-live="polite">
               <article>
                 <span>Загружаем данные</span>
@@ -36,10 +37,42 @@
               </article>
             </div>
 
+            <h2 id="chartTitle" class="chart-title">Загружаем график...</h2>
             <div id="chartBars" class="bars" aria-label="График сделок по стадиям">
               <span class="bars-loading">Загружаем агрегаты...</span>
             </div>
           </div>
+
+          <form id="visualEditor" class="editor-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Визуальное редактирование</p>
+                <h2>Настройки отчёта</h2>
+              </div>
+              <span id="editorStatus" class="status status-neutral">Версия загружается</span>
+            </div>
+            <div class="editor-fields">
+              <label>
+                Название отчёта
+                <input id="dashboardTitleInput" name="dashboardTitle" type="text" maxlength="120" required />
+              </label>
+              <label>
+                Название графика
+                <input id="chartTitleInput" name="chartTitle" type="text" maxlength="120" required />
+              </label>
+              <label>
+                Сортировка стадий
+                <select id="chartSortInput" name="chartSort">
+                  <option value="desc">По убыванию</option>
+                  <option value="asc">По возрастанию</option>
+                </select>
+              </label>
+            </div>
+            <div class="editor-actions">
+              <button type="submit">Сохранить версию</button>
+              <p id="editorMessage" class="editor-message" aria-live="polite"></p>
+            </div>
+          </form>
 
           <form id="aiCommandForm" class="ai-panel">
             <label for="aiCommand">Команда для ИИ</label>

@@ -31,7 +31,8 @@ test("normalizes aggregate responses without exposing source records", () => {
     type: "bar",
     title: "Сделки по стадиям",
     aggregate: { fn: "count" },
-    groupBy: ["stageId"]
+    groupBy: ["stageId"],
+    options: { sort: "desc", limit: 1 }
   };
 
   const result = normalizeWidgetData(widget, {
@@ -47,9 +48,26 @@ test("normalizes aggregate responses without exposing source records", () => {
     type: "bar",
     title: "Сделки по стадиям",
     value: 7,
-    groups: [{ label: "NEW", value: 4 }, { label: "Не указано", value: 3 }],
+    groups: [{ label: "NEW", value: 4 }],
     truncated: true
   });
+});
+
+test("sorts grouped aggregates before limiting them", () => {
+  const widget = {
+    id: "deals-by-stage",
+    type: "bar",
+    title: "Сделки по стадиям",
+    aggregate: { fn: "count" },
+    groupBy: ["stageId"],
+    options: { sort: "asc" }
+  };
+
+  const result = normalizeWidgetData(widget, {
+    data: { groups: [{ stageId: "WON", count: 5 }, { stageId: "NEW", count: 2 }, { stageId: "LOSE", count: 1 }] }
+  });
+
+  assert.deepEqual(result.groups, [{ label: "LOSE", value: 1 }, { label: "NEW", value: 2 }, { label: "WON", value: 5 }]);
 });
 
 test("normalizes absent and numeric aggregate values to zero", () => {

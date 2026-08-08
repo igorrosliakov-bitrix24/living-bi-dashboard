@@ -10,10 +10,20 @@ const authState = document.querySelector("#authState");
 const reportList = document.querySelector("#reportList");
 const metricRow = document.querySelector("#metricRow");
 const chartBars = document.querySelector("#chartBars");
+const dashboardName = document.querySelector("#dashboardName");
+const chartTitle = document.querySelector("#chartTitle");
+const visualEditor = document.querySelector("#visualEditor");
+const dashboardTitleInput = document.querySelector("#dashboardTitleInput");
+const chartTitleInput = document.querySelector("#chartTitleInput");
+const chartSortInput = document.querySelector("#chartSortInput");
+const editorStatus = document.querySelector("#editorStatus");
+const editorMessage = document.querySelector("#editorMessage");
+let dashboardSpec;
 
 checkButton.addEventListener("click", checkConnection);
 checkSession();
 loadAvailableEntities();
+loadDashboardSpec();
 loadDashboardData();
 
 async function loadAvailableEntities() {
@@ -77,9 +87,12 @@ function renderDashboardData(widgets) {
   );
 
   if (!bar) {
+    chartTitle.textContent = "График отсутствует";
     chartBars.textContent = "Для текущего отчёта нет столбчатого графика.";
     return;
   }
+
+  chartTitle.textContent = bar.title;
 
   const maxValue = Math.max(...bar.groups.map((group) => group.value), 1);
   chartBars.replaceChildren(
@@ -100,6 +113,84 @@ function renderDashboardData(widgets) {
     diagnosticsSummary.textContent = "Часть числовых агрегатов рассчитана по ограниченной выборке.";
   }
 }
+
+async function loadDashboardSpec() {
+  try {
+    const response = await fetch("/api/dashboard");
+    const payload = await response.json();
+
+    if (!response.ok || !payload.dashboard) {
+      throw new Error(payload.message || "Не удалось загрузить настройки отчёта.");
+    }
+
+    dashboardSpec = payload.dashboard;
+    renderDashboardEditor();
+  } catch (error) {
+    editorStatus.textContent = "Ошибка загрузки";
+    editorStatus.className = "status status-error";
+    editorMessage.textContent = error.message;
+  }
+}
+
+function renderDashboardEditor() {
+  const bar = dashboardSpec.widgets.find((widget) => widget.type === "bar");
+  dashboardName.textContent = dashboardSpec.title;
+  dashboardTitleInput.value = dashboardSpec.title;
+  chartTitleInput.value = bar?.title || "";
+  chartSortInput.value = bar?.options?.sort || "desc";
+  editorStatus.textContent = `Версия ${dashboardSpec.version}`;
+  editorStatus.className = "status status-success";
+  editorMessage.textContent = "";
+}
+
+visualEditor.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  if (!dashboardSpec) {
+    return;
+  }
+
+  const nextDashboard = structuredClone(dashboardSpec);
+  const bar = nextDashboard.widgets.find((widget) => widget.type === "bar");
+  nextDashboard.title = dashboardTitleInput.value.trim();
+
+  if (bar) {
+    bar.title = chartTitleInput.value.trim();
+    bar.options = { ...bar.options, sort: chartSortInput.value };
+  }
+
+  editorStatus.textContent = "Сохраняем";
+  editorStatus.className = "status status-neutral";
+  editorMessage.textContent = "";
+
+  try {
+    const response = await fetch("/api/dashboard", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dashboard: nextDashboard, expectedVersion: dashboardSpec.version })
+    });
+    const payload = await response.json();
+
+    if (response.status === 409) {
+      await loadDashboardSpec();
+      editorMessage.textContent = "Кто-то уже сохранил другую версию. Загружены актуальные настройки.";
+      return;
+    }
+
+    if (!response.ok || !payload.saved) {
+      throw new Error(payload.message || "Изменение не сохранено.");
+    }
+
+    dashboardSpec = payload.dashboard;
+    renderDashboardEditor();
+    await loadDashboardData();
+    editorMessage.textContent = "Новая версия сохранена.";
+  } catch (error) {
+    editorStatus.textContent = "Ошибка сохранения";
+    editorStatus.className = "status status-error";
+    editorMessage.textContent = error.message;
+  }
+});
 
 function formatNumber(value) {
   return new Intl.NumberFormat("ru-RU").format(value);
