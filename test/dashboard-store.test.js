@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DashboardStore } from "../lib/dashboard-store.js";
+import { createInitialDashboard } from "../lib/dashboard-spec.js";
 
 test("creates immutable copies and saves a new version", () => {
   const store = new DashboardStore();
@@ -51,4 +52,12 @@ test("lists versions and restores a prior version as a new record", () => {
   assert.equal(restored.dashboard.version, 3);
   assert.equal(restored.dashboard.title, "Продажи: обзор");
   assert.deepEqual(store.restore(99, 3), { saved: false, error: "version_not_found" });
+});
+
+test("migrates the legacy closeDate period field", () => {
+  const legacy = createInitialDashboard();
+  legacy.period.field = "closeDate";
+  const store = new DashboardStore(legacy);
+
+  assert.equal(store.getCurrent().period.field, "closedAt");
 });

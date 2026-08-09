@@ -7,6 +7,8 @@ import { createInitialDashboard } from "./lib/dashboard-spec.js";
 import { FileDashboardStore } from "./lib/file-dashboard-store.js";
 import { buildAggregateRequest, normalizeWidgetData } from "./lib/dashboard-data.js";
 import { isDashboardEntity, listDashboardEntities } from "./lib/entities.js";
+import { extractFieldNames, validateDashboardFields } from "./lib/dashboard-fields.js";
+import { mapWithConcurrency, TtlCache } from "./lib/ttl-cache.js";
 import { buildVibeHeaders, getGatewayAuthorization, getGatewayUser } from "./lib/gateway.js";
 import { RequestBodyError, readJsonBody } from "./lib/request-body.js";
 import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, extractAiProposal } from "./lib/ai-dashboard.js";
@@ -27,6 +29,8 @@ const dashboardStatePath = process.env.DASHBOARD_STATE_PATH || join(
   "dashboard-state.json"
 );
 const dashboardStore = new FileDashboardStore({ initialSpec: createInitialDashboard(), statePath: dashboardStatePath });
+const fieldCache = new TtlCache({ ttlMs: 5 * 60 * 1_000 });
+const aggregateCache = new TtlCache({ ttlMs: 5 * 60 * 1_000 });
 
 await dashboardStore.load();
 
@@ -81,7 +85,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/dashboard/data" && req.method === "GET") {
-      return getDashboardData(req, res);
+      return getDashboardData(req, res, url.searchParams.has("refresh"));
     }
 
     if (url.pathname === "/api/entities" && req.method === "GET") {
@@ -212,6 +216,12 @@ async function saveDashboard(req, res) {
       });
     }
 
+    const fieldsValidation = await validateDashboardForPortal(req, body.dashboard);
+
+    if (!fieldsValidation.valid) {
+      return sendJson(res, 400, { error: "unknown_dashboard_field", message: fieldsValidation.errors.join(" ") });
+    }
+
     const result = await dashboardStore.save(body.dashboard, body.expectedVersion);
 
     if (!result.saved && result.error === "version_conflict") {
@@ -274,6 +284,12 @@ async function createAiDraft(req, res) {
     }
 
     const proposal = extractAiProposal(payload, current.version);
+    const fieldsValidation = await validateDashboardForPortal(req, proposal.dashboard);
+
+    if (!fieldsValidation.valid) {
+      return sendJson(res, 400, { error: "ai_unknown_dashboard_field", message: fieldsValidation.errors.join(" ") });
+    }
+
     return sendJson(res, 200, {
       proposal: { ...proposal, changes: buildDashboardDiff(current, proposal.dashboard) }
     }, { "Cache-Control": "no-store" });
@@ -288,6 +304,43 @@ async function createAiDraft(req, res) {
 
     throw error;
   }
+}
+
+async function validateDashboardForPortal(req, dashboard) {
+  const headers = resolveVibeHeaders(req);
+
+  if (!headers) {
+    return { valid: false, errors: ["Для проверки полей нужна сессия Gateway."] };
+  }
+
+  const entities = [...new Set(dashboard.widgets.map((widget) => widget.entity))];
+  const userId = getGatewayUser(req.headers)?.id || "local";
+  const responses = await mapWithConcurrency(entities, 4, async (entity) => {
+    const cacheKey = `${userId}:${entity}`;
+    const cached = fieldCache.get(cacheKey);
+
+    if (cached) {
+      return { entity, response: { ok: true }, payload: cached };
+    }
+
+    const response = await fetch(`${apiBase}/v1/${entity}/fields`, { headers });
+    const payload = await readJson(response);
+    if (response.ok) {
+      fieldCache.set(cacheKey, payload);
+    }
+    return { entity, response, payload };
+  });
+  const fieldsByEntity = new Map();
+
+  for (const { entity, response, payload } of responses) {
+    if (!response.ok) {
+      return { valid: false, errors: [`Не удалось получить поля сущности «${entity}».`] };
+    }
+
+    fieldsByEntity.set(entity, extractFieldNames(payload));
+  }
+
+  return validateDashboardFields(dashboard, fieldsByEntity);
 }
 
 async function restoreDashboard(req, res) {
@@ -345,7 +398,7 @@ function canEditDashboard(req, res) {
   return false;
 }
 
-async function getDashboardData(req, res) {
+async function getDashboardData(req, res, refresh) {
   const headers = resolveVibeHeaders(req);
 
   if (!headers) {
@@ -353,16 +406,24 @@ async function getDashboardData(req, res) {
   }
 
   const dashboard = dashboardStore.getCurrent();
-  const widgetResponses = await Promise.all(dashboard.widgets.map(async (widget) => {
+  const userId = getGatewayUser(req.headers)?.id || "local";
+  const cacheKey = `${userId}:${dashboard.version}`;
+  const cached = !refresh && aggregateCache.get(cacheKey);
+
+  if (cached) {
+    return sendJson(res, 200, { ...cached, cached: true }, { "Cache-Control": "no-store" });
+  }
+
+  const widgetResponses = await mapWithConcurrency(dashboard.widgets, 4, async (widget) => {
     const response = await fetch(`${apiBase}/v1/${widget.entity}/aggregate`, {
       method: "POST",
       headers: { ...headers, "Content-Type": "application/json" },
-      body: JSON.stringify(buildAggregateRequest(widget))
+      body: JSON.stringify(buildAggregateRequest(widget, dashboard.period))
     });
     const payload = await readJson(response);
 
     return { response, widget, payload };
-  }));
+  });
   const failed = widgetResponses.find(({ response }) => !response.ok);
 
   if (failed) {
@@ -373,10 +434,12 @@ async function getDashboardData(req, res) {
     });
   }
 
-  return sendJson(res, 200, {
+  const result = {
     dashboardVersion: dashboard.version,
     widgets: widgetResponses.map(({ widget, payload }) => normalizeWidgetData(widget, payload))
-  }, { "Cache-Control": "no-store" });
+  };
+  aggregateCache.set(cacheKey, result);
+  return sendJson(res, 200, { ...result, cached: false }, { "Cache-Control": "no-store" });
 }
 
 async function serveStatic(pathname, res) {

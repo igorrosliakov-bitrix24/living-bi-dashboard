@@ -48,3 +48,19 @@ test("accepts a numeric aggregate only with a safe field name", () => {
   spec.widgets[1].aggregate.field = "opportunity; delete";
   assert.equal(validateDashboardSpec(spec).valid, false);
 });
+
+test("accepts supported visual types, filters, and widget period overrides", () => {
+  const dashboard = createInitialDashboard();
+  dashboard.widgets[0] = {
+    ...dashboard.widgets[0],
+    type: "donut",
+    filter: { stageId: { "$in": ["NEW", "WON"] } },
+    period: { field: "createdAt", preset: "this_month" },
+    options: { color: "#2fc6f6", orientation: "horizontal" }
+  };
+
+  assert.deepEqual(validateDashboardSpec(dashboard), { valid: true, errors: [] });
+
+  dashboard.widgets[0].filter = { "$or": [] };
+  assert.equal(validateDashboardSpec(dashboard).valid, false);
+});

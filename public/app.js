@@ -1,4 +1,5 @@
 const checkButton = document.querySelector("#checkConnection");
+const refreshDashboardButton = document.querySelector("#refreshDashboard");
 const form = document.querySelector("#aiCommandForm");
 const textarea = document.querySelector("#aiCommand");
 const output = document.querySelector("#output");
@@ -30,6 +31,7 @@ let dashboardSpec;
 let aiProposal;
 
 checkButton.addEventListener("click", checkConnection);
+refreshDashboardButton.addEventListener("click", () => loadDashboardData(true));
 checkSession();
 loadAvailableEntities();
 loadDashboardSpec();
@@ -64,9 +66,10 @@ async function loadAvailableEntities() {
   }
 }
 
-async function loadDashboardData() {
+async function loadDashboardData(refresh = false) {
   try {
-    const response = await fetch("/api/dashboard/data");
+    refreshDashboardButton.disabled = true;
+    const response = await fetch(`/api/dashboard/data${refresh ? "?refresh=1" : ""}`);
     const payload = await response.json();
 
     if (!response.ok || !Array.isArray(payload.widgets)) {
@@ -76,6 +79,8 @@ async function loadDashboardData() {
     renderDashboardData(payload.widgets);
   } catch (error) {
     chartBars.textContent = `Данные пока недоступны: ${error.message}`;
+  } finally {
+    refreshDashboardButton.disabled = false;
   }
 }
 

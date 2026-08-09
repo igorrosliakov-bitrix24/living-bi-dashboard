@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildAggregateRequest, normalizeWidgetData } from "../lib/dashboard-data.js";
+import { buildAggregateRequest, buildPeriodFilter, normalizeWidgetData } from "../lib/dashboard-data.js";
 
 test("builds a count aggregate with an optional grouping", () => {
   const request = buildAggregateRequest({
@@ -23,6 +23,20 @@ test("builds a numeric aggregate without empty groupings", () => {
   assert.deepEqual(request, {
     aggregate: [{ field: "opportunity", function: "sum" }]
   });
+});
+
+test("adds the dashboard period and safe widget filter to aggregate requests", () => {
+  const request = buildAggregateRequest({
+    aggregate: { fn: "count" },
+    filter: { stageId: { "$in": ["NEW", "WON"] } },
+    period: { field: "createdAt", preset: "this_month" }
+  }, { field: "closedAt", preset: "this_year" }, new Date("2026-08-08T10:20:30Z"));
+
+  assert.deepEqual(request.filter, {
+    stageId: { "$in": ["NEW", "WON"] },
+    createdAt: { "$gte": "2026-08-01T00:00:00", "$lte": "2026-08-31T23:59:59" }
+  });
+  assert.deepEqual(buildPeriodFilter(undefined), {});
 });
 
 test("normalizes aggregate responses without exposing source records", () => {
