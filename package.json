@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
+    "seed": "node scripts/seed-demo-data.js",
     "lint": "eslint .",
     "test": "node --test --experimental-test-coverage --test-coverage-include=lib/**/*.js --test-coverage-lines=70",
     "check": "npm run lint && npm test",
