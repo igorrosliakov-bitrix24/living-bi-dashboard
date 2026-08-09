@@ -1,30 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, extractAiProposal } from "../lib/ai-dashboard.js";
+import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createProposalFromPatch, extractAiToolCalls } from "../lib/ai-dashboard.js";
 import { createInitialDashboard } from "../lib/dashboard-spec.js";
 
-test("creates a constrained JSON request without CRM records", () => {
-  const dashboard = createInitialDashboard();
-  const request = createAiCompletionRequest(dashboard, "Отсортируй стадии по возрастанию");
+test("creates a constrained tool request without CRM records", () => {
+  const request = createAiCompletionRequest("Отсортируй стадии по возрастанию");
 
   assert.equal(request.model, "bitrix/bitrixgpt-5.5");
-  assert.deepEqual(request.response_format, { type: "json_object" });
-  assert.match(request.messages[0].content, /Не добавляй CRM-записи/);
+  assert.equal(request.tools.length, 5);
   assert.match(request.messages[1].content, /Отсортируй стадии/);
+  assert.match(request.messages[0].content, /Не добавляй CRM-записи/);
 });
 
-test("accepts only a valid proposal for the current version", () => {
+test("accepts an apply_changes tool call and validates its patch", () => {
   const dashboard = createInitialDashboard();
-  const proposed = structuredClone(dashboard);
-  proposed.widgets[0].options.sort = "asc";
-  const result = extractAiProposal({
-    choices: [{ message: { content: JSON.stringify({ dashboard: proposed, summary: "Изменил сортировку." }) } }]
-  }, 1);
+  const calls = extractAiToolCalls({ choices: [{ message: { tool_calls: [{ id: "call_1", type: "function", function: { name: "apply_changes", arguments: JSON.stringify({ patch: [{ op: "replace", path: "/widgets/0/options/sort", value: "asc" }], summary: "Изменил сортировку." }) } }] } }] });
+  const result = createProposalFromPatch(dashboard, calls[0].arguments.patch, calls[0].arguments.summary);
 
   assert.equal(result.summary, "Изменил сортировку.");
   assert.equal(result.dashboard.widgets[0].options.sort, "asc");
   assert.throws(
-    () => extractAiProposal({ choices: [{ message: { content: JSON.stringify({ dashboard: { ...proposed, version: 2 } }) } }] }, 1),
+    () => extractAiToolCalls({ choices: [{ message: { tool_calls: [{ id: "broken", type: "function", function: { name: "apply_changes", arguments: "{" } }] } }] }),
     AiDashboardError
   );
 });

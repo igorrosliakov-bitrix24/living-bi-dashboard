@@ -56,3 +56,5 @@ npm run audit
 ```
 
 Тесты проверяют валидацию спеки, получение агрегатов, историю версий, Gateway и защиту входных данных. Сценарий демонстрации для статьи: [docs/demo-script.md](docs/demo-script.md).
+
+GitHub Actions запускает `npm run check` и `npm run audit` при каждом push и pull request.

@@ -21,7 +21,7 @@ test("persists and restores dashboard versions across store instances", async ()
     await second.load();
     assert.equal(second.getCurrent().title, "Продажи за квартал");
     assert.equal(second.listVersions().length, 2);
-    assert.equal(JSON.parse(await readFile(statePath, "utf8")).format, 1);
+    assert.equal(JSON.parse(await readFile(statePath, "utf8")).format, 2);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

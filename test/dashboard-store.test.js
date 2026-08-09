@@ -61,3 +61,12 @@ test("migrates the legacy closeDate period field", () => {
 
   assert.equal(store.getCurrent().period.field, "closedAt");
 });
+
+test("includes dashboard owner in the persistent snapshot", () => {
+  const store = new DashboardStore();
+
+  assert.equal(store.claimOwner("user-1"), true);
+  assert.equal(store.claimOwner("user-2"), false);
+  assert.equal(store.getSnapshot().ownerId, "user-1");
+  assert.equal(store.getSnapshot().format, 2);
+});

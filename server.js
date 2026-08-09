@@ -9,9 +9,11 @@ import { buildAggregateRequest, normalizeWidgetData } from "./lib/dashboard-data
 import { isDashboardEntity, listDashboardEntities } from "./lib/entities.js";
 import { extractFieldNames, validateDashboardFields } from "./lib/dashboard-fields.js";
 import { mapWithConcurrency, TtlCache } from "./lib/ttl-cache.js";
+import { resolveDashboardEditAccess } from "./lib/dashboard-access.js";
 import { buildVibeHeaders, getGatewayAuthorization, getGatewayUser } from "./lib/gateway.js";
 import { RequestBodyError, readJsonBody } from "./lib/request-body.js";
-import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, extractAiProposal } from "./lib/ai-dashboard.js";
+import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createProposalFromPatch, extractAiToolCalls } from "./lib/ai-dashboard.js";
+import { validateDashboardSpec } from "./lib/dashboard-spec.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const publicDir = join(__dirname, "public");
@@ -268,31 +270,8 @@ async function createAiDraft(req, res) {
       return sendGatewayRequired(res);
     }
 
-    const response = await fetch(`${apiBase}/v1/chat/completions`, {
-      method: "POST",
-      headers: { ...headers, "Content-Type": "application/json" },
-      body: JSON.stringify(createAiCompletionRequest(current, body.command)),
-      signal: AbortSignal.timeout(20_000)
-    });
-    const payload = await readJson(response);
-
-    if (!response.ok) {
-      return sendJson(res, response.status, {
-        error: "ai_request_failed",
-        message: payload.error?.message || "Не удалось подготовить изменение с помощью ИИ."
-      });
-    }
-
-    const proposal = extractAiProposal(payload, current.version);
-    const fieldsValidation = await validateDashboardForPortal(req, proposal.dashboard);
-
-    if (!fieldsValidation.valid) {
-      return sendJson(res, 400, { error: "ai_unknown_dashboard_field", message: fieldsValidation.errors.join(" ") });
-    }
-
-    return sendJson(res, 200, {
-      proposal: { ...proposal, changes: buildDashboardDiff(current, proposal.dashboard) }
-    }, { "Cache-Control": "no-store" });
+    const proposal = await runAiToolLoop({ command: body.command, current, headers, req });
+    return sendJson(res, 200, { proposal: { ...proposal, changes: buildDashboardDiff(current, proposal.dashboard) } }, { "Cache-Control": "no-store" });
   } catch (error) {
     if (error instanceof RequestBodyError || error instanceof AiDashboardError) {
       return sendJson(res, 400, { error: error.code, message: error.message });
@@ -304,6 +283,108 @@ async function createAiDraft(req, res) {
 
     throw error;
   }
+}
+
+async function runAiToolLoop({ command, current, headers, req }) {
+  const messages = [];
+  let previewed = false;
+
+  for (let round = 0; round < 4; round += 1) {
+    const response = await fetch(`${apiBase}/v1/chat/completions`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify(createAiCompletionRequest(command, messages)),
+      signal: AbortSignal.timeout(20_000)
+    });
+    const payload = await readJson(response);
+
+    if (!response.ok) {
+      throw new AiDashboardError("ai_request_failed", payload.error?.message || "Не удалось подготовить изменение с помощью ИИ.");
+    }
+
+    const calls = extractAiToolCalls(payload);
+    const assistantMessage = payload.choices[0].message;
+    messages.push({ role: "assistant", content: assistantMessage.content || null, tool_calls: assistantMessage.tool_calls });
+
+    for (const call of calls) {
+      if (call.name === "apply_changes") {
+        if (!previewed) {
+          throw new AiDashboardError("ai_preview_required", "ИИ должен проверить агрегат перед изменением отчёта.");
+        }
+
+        const proposal = createProposalFromPatch(current, call.arguments.patch, call.arguments.summary);
+        const fieldsValidation = await validateDashboardForPortal(req, proposal.dashboard);
+
+        if (!fieldsValidation.valid) {
+          throw new AiDashboardError("ai_unknown_dashboard_field", fieldsValidation.errors.join(" "));
+        }
+
+        return proposal;
+      }
+
+      const result = await executeAiTool({ call, current, headers, req });
+      previewed ||= call.name === "preview_aggregate";
+      messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+    }
+  }
+
+  throw new AiDashboardError("ai_tool_limit", "ИИ не подготовил изменение за четыре шага.");
+}
+
+async function executeAiTool({ call, current, headers, req }) {
+  if (call.name === "get_dashboard") {
+    return { dashboard: current };
+  }
+
+  if (call.name === "list_entities") {
+    return { entities: ["deals", "companies", "tasks", "activities"] };
+  }
+
+  if (call.name === "get_entity_fields") {
+    if (!isDashboardEntity(call.arguments.entity)) {
+      throw new AiDashboardError("ai_unsupported_entity", "ИИ запросил сущность вне дашборда.");
+    }
+
+    const response = await fetch(`${apiBase}/v1/${call.arguments.entity}/fields`, { headers });
+    const payload = await readJson(response);
+
+    if (!response.ok) {
+      throw new AiDashboardError("ai_fields_failed", "Не удалось получить поля сущности для ИИ.");
+    }
+
+    return { entity: call.arguments.entity, fields: Object.keys(payload.data?.fields || {}) };
+  }
+
+  if (call.name === "preview_aggregate") {
+    const widget = call.arguments.widget;
+    const previewDashboard = { ...current, widgets: [widget] };
+    const validation = validateDashboardSpec(previewDashboard);
+
+    if (!validation.valid) {
+      throw new AiDashboardError("ai_invalid_preview", validation.errors.join(" "));
+    }
+
+    const fieldsValidation = await validateDashboardForPortal(req, previewDashboard);
+
+    if (!fieldsValidation.valid) {
+      throw new AiDashboardError("ai_unknown_dashboard_field", fieldsValidation.errors.join(" "));
+    }
+
+    const response = await fetch(`${apiBase}/v1/${widget.entity}/aggregate`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify(buildAggregateRequest(widget, previewDashboard.period))
+    });
+    const payload = await readJson(response);
+
+    if (!response.ok) {
+      throw new AiDashboardError("ai_preview_failed", "Не удалось проверить агрегат для будущего виджета.");
+    }
+
+    return { preview: normalizeWidgetData(widget, payload) };
+  }
+
+  throw new AiDashboardError("ai_unknown_tool", "ИИ запросил недоступный инструмент.");
 }
 
 async function validateDashboardForPortal(req, dashboard) {
@@ -387,13 +468,22 @@ async function restoreDashboard(req, res) {
 }
 
 function canEditDashboard(req, res) {
-  if (!isProduction || (getGatewayAuthorization(req.headers) && getGatewayUser(req.headers)?.role === "ADMIN")) {
+  if (!isProduction) {
+    return true;
+  }
+
+  const access = resolveDashboardEditAccess({ ownerId: dashboardStore.getOwnerId(), user: getGatewayUser(req.headers) });
+
+  if (access.allowed) {
+    if (access.claimOwner) {
+      dashboardStore.claimOwner(getGatewayUser(req.headers).id);
+    }
     return true;
   }
 
   sendJson(res, 403, {
     error: "dashboard_edit_forbidden",
-    message: "Редактировать отчёт может администратор, открывший приложение через Битрикс24."
+    message: "Редактировать отчёт может только его владелец, открывший приложение через Битрикс24."
   });
   return false;
 }
