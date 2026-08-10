@@ -17,6 +17,7 @@ const visualEditor = document.querySelector("#visualEditor");
 const dashboardTitleInput = document.querySelector("#dashboardTitleInput");
 const chartTitleInput = document.querySelector("#chartTitleInput");
 const chartSortInput = document.querySelector("#chartSortInput");
+const dashboardPeriodInput = document.querySelector("#dashboardPeriodInput");
 const editorStatus = document.querySelector("#editorStatus");
 const editorMessage = document.querySelector("#editorMessage");
 const aiStatus = document.querySelector("#aiStatus");
@@ -231,6 +232,7 @@ function renderDashboardEditor() {
   dashboardTitleInput.value = dashboardSpec.title;
   chartTitleInput.value = bar?.title || "";
   chartSortInput.value = bar?.options?.sort || "desc";
+  dashboardPeriodInput.value = dashboardSpec.period?.preset || "all_time";
   editorStatus.textContent = `Версия ${dashboardSpec.version}`;
   editorStatus.className = "status status-success";
   editorMessage.textContent = "";
@@ -246,6 +248,7 @@ visualEditor.addEventListener("submit", async (event) => {
   const nextDashboard = structuredClone(dashboardSpec);
   const bar = nextDashboard.widgets.find((widget) => widget.type === "bar");
   nextDashboard.title = dashboardTitleInput.value.trim();
+  nextDashboard.period = { ...nextDashboard.period, preset: dashboardPeriodInput.value };
 
   if (bar) {
     bar.title = chartTitleInput.value.trim();

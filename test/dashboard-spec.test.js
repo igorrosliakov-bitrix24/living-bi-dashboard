@@ -7,6 +7,7 @@ test("creates a valid initial dashboard specification", () => {
 
   assert.equal(validateDashboardSpec(spec).valid, true);
   assert.equal(spec.widgets[0].aggregate.fn, "count");
+  assert.equal(spec.period.preset, "all_time");
 });
 
 test("rejects unsafe dashboard shapes and unsupported business operations", () => {

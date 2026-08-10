@@ -15,10 +15,13 @@ test("builds isolated demo records with a stable namespace", () => {
   const tasks = createTaskCalls(new Date("2026-08-01T00:00:00Z"));
 
   assert.equal(companies.length, 3);
-  assert.equal(deals.length, 12);
+  assert.equal(deals.length, 28);
   assert.equal(tasks.length, 8);
   assert.ok([...companies, ...deals, ...tasks].every((call) => call.params.xmlId.startsWith(demoNamespace)));
   assert.equal(deals[0].params.companyId, 11);
+  assert.equal(deals[0].params.closedAt, "2026-02-01T00:00:00.000Z");
+  assert.equal(deals.at(-1).params.closedAt, "2025-08-01T00:00:00.000Z");
+  assert.deepEqual([...new Set(deals.map((deal) => deal.params.stageId))], ["NEW", "PREPARATION", "WON", "LOSE"]);
   assert.equal(tasks[0].params.deadline, "2026-07-29T00:00:00.000Z");
 });
 

@@ -37,6 +37,7 @@ test("adds the dashboard period and safe widget filter to aggregate requests", (
     createdAt: { "$gte": "2026-08-01T00:00:00", "$lte": "2026-08-31T23:59:59" }
   });
   assert.deepEqual(buildPeriodFilter(undefined), {});
+  assert.deepEqual(buildPeriodFilter({ field: "closedAt", preset: "all_time" }), {});
 });
 
 test("normalizes aggregate responses without exposing source records", () => {
