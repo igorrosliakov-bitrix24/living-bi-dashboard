@@ -16,6 +16,7 @@ export default [
         console: "readonly",
         document: "readonly",
         fetch: "readonly",
+        navigator: "readonly",
         ResizeObserver: "readonly",
         setInterval: "readonly",
         structuredClone: "readonly",

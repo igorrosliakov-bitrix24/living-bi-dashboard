@@ -478,6 +478,25 @@ textarea {
   padding-top: 16px;
 }
 
+.development-request {
+  border-left: 3px solid #ff9f43;
+  display: grid;
+  gap: 10px;
+  padding: 16px 0 0 14px;
+}
+
+.development-request .eyebrow {
+  color: #9a5b08;
+  margin-bottom: 4px;
+}
+
+.development-request textarea {
+  background: #fbfcfe;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  line-height: 1.45;
+  resize: vertical;
+}
+
 .ai-proposal .eyebrow {
   margin-bottom: 4px;
 }

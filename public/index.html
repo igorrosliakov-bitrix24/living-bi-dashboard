@@ -137,6 +137,19 @@
               <ul id="aiChanges" class="ai-changes"></ul>
               <button id="applyAiProposal" type="button">Применить предложение</button>
             </section>
+            <section id="developmentRequest" class="development-request" hidden>
+              <div>
+                <p class="eyebrow">Нужна доработка</p>
+                <h2>Заявка для агента разработки</h2>
+              </div>
+              <p id="developmentReason" class="editor-message"></p>
+              <label for="developmentRequestText">Структурированная заявка</label>
+              <textarea id="developmentRequestText" rows="16" readonly></textarea>
+              <div class="editor-actions">
+                <button id="copyDevelopmentRequest" class="secondary-button" type="button">Скопировать заявку</button>
+                <p id="developmentCopyStatus" class="editor-message" aria-live="polite"></p>
+              </div>
+            </section>
           </form>
 
         </section>

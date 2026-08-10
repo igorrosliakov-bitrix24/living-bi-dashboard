@@ -28,11 +28,17 @@ const aiProposalPanel = document.querySelector("#aiProposal");
 const aiSummary = document.querySelector("#aiSummary");
 const aiChanges = document.querySelector("#aiChanges");
 const applyAiProposal = document.querySelector("#applyAiProposal");
+const developmentRequestPanel = document.querySelector("#developmentRequest");
+const developmentReason = document.querySelector("#developmentReason");
+const developmentRequestText = document.querySelector("#developmentRequestText");
+const copyDevelopmentRequest = document.querySelector("#copyDevelopmentRequest");
+const developmentCopyStatus = document.querySelector("#developmentCopyStatus");
 const versionCount = document.querySelector("#versionCount");
 const versionList = document.querySelector("#versionList");
 const versionMessage = document.querySelector("#versionMessage");
 let dashboardSpec;
 let aiProposal;
+let developmentRequest;
 let selectedEntity = "deals";
 let availableEntities = [];
 let demoSources = {};
@@ -595,6 +601,10 @@ form.addEventListener("submit", async (event) => {
 
   aiStatus.textContent = "BitrixGPT готовит черновик...";
   aiProposalPanel.hidden = true;
+  developmentRequestPanel.hidden = true;
+  aiProposal = undefined;
+  developmentRequest = undefined;
+  developmentCopyStatus.textContent = "";
 
   try {
     const response = await apiFetch("/api/dashboard/ai-draft", {
@@ -604,7 +614,20 @@ form.addEventListener("submit", async (event) => {
     });
     const payload = await response.json();
 
-    if (!response.ok || !payload.proposal) {
+    if (!response.ok) {
+      throw new Error(payload.message || "ИИ не подготовил изменение.");
+    }
+
+    if (payload.developmentRequest) {
+      developmentRequest = payload.developmentRequest;
+      developmentReason.textContent = developmentRequest.reason;
+      developmentRequestText.value = developmentRequest.markdown;
+      developmentRequestPanel.hidden = false;
+      aiStatus.textContent = "Для этого запроса нужна доработка приложения. Заявка готова к передаче агенту разработки.";
+      return;
+    }
+
+    if (!payload.proposal) {
       throw new Error(payload.message || "ИИ не подготовил изменение.");
     }
 
@@ -619,6 +642,24 @@ form.addEventListener("submit", async (event) => {
     aiProposalPanel.hidden = false;
   } catch (error) {
     aiStatus.textContent = error.message;
+  }
+});
+
+copyDevelopmentRequest.addEventListener("click", async () => {
+  if (!developmentRequest?.markdown) {
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(developmentRequest.markdown);
+    developmentCopyStatus.textContent = "Заявка скопирована. Её можно передать агенту разработки.";
+  } catch {
+    developmentRequestText.focus();
+    developmentRequestText.select();
+    const copied = document.execCommand("copy");
+    developmentCopyStatus.textContent = copied
+      ? "Заявка скопирована. Её можно передать агенту разработки."
+      : "Выделите текст заявки и скопируйте его вручную.";
   }
 });
 

@@ -14,7 +14,7 @@ import { resolveDashboardEditAccess } from "./lib/dashboard-access.js";
 import { buildVibeHeaders, getGatewayAuthorization, getGatewayUser } from "./lib/gateway.js";
 import { GatewaySessionStore } from "./lib/gateway-session.js";
 import { RequestBodyError, readJsonBody } from "./lib/request-body.js";
-import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createProposalFromPatch, extractAiToolCalls } from "./lib/ai-dashboard.js";
+import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createDevelopmentRequest, createProposalFromPatch, extractAiToolCalls } from "./lib/ai-dashboard.js";
 import { validateDashboardSpec } from "./lib/dashboard-spec.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -376,8 +376,13 @@ async function createAiDraft(req, res) {
       return sendGatewayRequired(res);
     }
 
-    const proposal = await runAiToolLoop({ command: body.command, current, headers, req });
-    return sendJson(res, 200, { proposal: { ...proposal, changes: buildDashboardDiff(current, proposal.dashboard) } }, { "Cache-Control": "no-store" });
+    const result = await runAiToolLoop({ command: body.command, current, headers, req });
+
+    if (result.kind === "development_request") {
+      return sendJson(res, 200, { developmentRequest: result.developmentRequest }, { "Cache-Control": "no-store" });
+    }
+
+    return sendJson(res, 200, { proposal: { ...result.proposal, changes: buildDashboardDiff(current, result.proposal.dashboard) } }, { "Cache-Control": "no-store" });
   } catch (error) {
     if (error instanceof RequestBodyError || error instanceof AiDashboardError) {
       return sendJson(res, 400, { error: error.code, message: error.message });
@@ -412,6 +417,14 @@ async function runAiToolLoop({ command, current, headers, req }) {
     const assistantMessage = payload.choices[0].message;
     messages.push({ role: "assistant", content: assistantMessage.content || null, tool_calls: assistantMessage.tool_calls });
 
+    const developmentCall = calls.find((call) => call.name === "request_development");
+    if (developmentCall) {
+      return {
+        kind: "development_request",
+        developmentRequest: createDevelopmentRequest(command, developmentCall.arguments)
+      };
+    }
+
     for (const call of calls) {
       if (call.name === "apply_changes") {
         if (!previewed) {
@@ -425,7 +438,7 @@ async function runAiToolLoop({ command, current, headers, req }) {
           throw new AiDashboardError("ai_unknown_dashboard_field", fieldsValidation.errors.join(" "));
         }
 
-        return proposal;
+        return { kind: "proposal", proposal };
       }
 
       const result = await executeAiTool({ call, current, headers, req });
