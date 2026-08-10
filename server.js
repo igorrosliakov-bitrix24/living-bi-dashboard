@@ -14,8 +14,9 @@ import { resolveDashboardEditAccess } from "./lib/dashboard-access.js";
 import { buildVibeHeaders, getGatewayAuthorization, getGatewayUser } from "./lib/gateway.js";
 import { GatewaySessionStore } from "./lib/gateway-session.js";
 import { RequestBodyError, readJsonBody } from "./lib/request-body.js";
-import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createDevelopmentFallback, createDevelopmentRequest, createDevelopmentRequestCompletion, createProposalFromPatch, createVisualCommandProposal, extractAiToolCalls, needsAggregatePreview } from "./lib/ai-dashboard.js";
+import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createConversionCommandProposal, createDevelopmentFallback, createDevelopmentRequest, createDevelopmentRequestCompletion, createProposalFromPatch, createVisualCommandProposal, extractAiToolCalls, needsAggregatePreview } from "./lib/ai-dashboard.js";
 import { validateDashboardSpec } from "./lib/dashboard-spec.js";
+import { resolveCategoryExclusions } from "./lib/dashboard-rules.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const publicDir = join(__dirname, "public");
@@ -391,6 +392,18 @@ async function createAiDraft(req, res) {
       return sendJson(res, 200, { proposal: { ...visualProposal, changes: buildDashboardDiff(current, visualProposal.dashboard) } }, { "Cache-Control": "no-store" });
     }
 
+    const conversionProposal = createConversionCommandProposal(body.command, current);
+    if (conversionProposal) {
+      const fieldsValidation = await validateDashboardForPortal(req, conversionProposal.dashboard);
+
+      if (!fieldsValidation.valid) {
+        throw new AiDashboardError("ai_unknown_dashboard_field", fieldsValidation.errors.join(" "));
+      }
+
+      const preview = await previewDashboardWidgets(conversionProposal.dashboard, headers);
+      return sendJson(res, 200, { proposal: { ...conversionProposal, changes: [...buildDashboardDiff(current, conversionProposal.dashboard), ...preview.warnings] } }, { "Cache-Control": "no-store" });
+    }
+
     const result = await runAiToolLoop({ command: body.command, current, headers, req });
 
     if (result.kind === "development_request") {
@@ -569,10 +582,11 @@ async function executeAiTool({ call, current, headers, req }) {
       throw new AiDashboardError("ai_unknown_dashboard_field", fieldsValidation.errors.join(" "));
     }
 
+    const prepared = await prepareWidgetForAggregate(widget, headers);
     const response = await fetch(`${apiBase}/v1/${widget.entity}/aggregate`, {
       method: "POST",
       headers: { ...headers, "Content-Type": "application/json" },
-      body: JSON.stringify(buildAggregateRequest(widget, previewDashboard.period))
+      body: JSON.stringify(buildAggregateRequest(prepared.widget, previewDashboard.period))
     });
     const payload = await readJson(response);
 
@@ -580,7 +594,7 @@ async function executeAiTool({ call, current, headers, req }) {
       throw new AiDashboardError("ai_preview_failed", "Не удалось проверить агрегат для будущего виджета.");
     }
 
-    return { preview: normalizeWidgetData(widget, payload) };
+    return { preview: normalizeWidgetData(widget, payload), warnings: prepared.warnings };
   }
 
   throw new AiDashboardError("ai_unknown_tool", "ИИ запросил недоступный инструмент.");
@@ -716,15 +730,17 @@ async function getDashboardData(req, res, refresh) {
 
   const sourceWidgets = dashboard.widgets.filter((widget) => widget.computed === undefined);
   const labelMaps = await loadDashboardLabelMaps({ ...dashboard, widgets: sourceWidgets }, headers);
+  const dealCategories = await loadDealCategoriesIfNeeded(sourceWidgets, headers);
   const widgetResponses = await mapWithConcurrency(sourceWidgets, 4, async (widget) => {
+    const prepared = await prepareWidgetForAggregate(widget, headers, dealCategories);
     const response = await fetch(`${apiBase}/v1/${widget.entity}/aggregate`, {
       method: "POST",
       headers: { ...headers, "Content-Type": "application/json" },
-      body: JSON.stringify(buildAggregateRequest(widget, dashboard.period))
+      body: JSON.stringify(buildAggregateRequest(prepared.widget, dashboard.period))
     });
     const payload = await readJson(response);
 
-    return { response, widget, payload };
+    return { response, widget, payload, warnings: prepared.warnings };
   });
   const failed = widgetResponses.find(({ response }) => !response.ok);
 
@@ -739,6 +755,7 @@ async function getDashboardData(req, res, refresh) {
   const normalizedById = new Map(widgetResponses.map(({ widget, payload }) => [widget.id, normalizeWidgetData(widget, payload, labelMaps)]));
   const result = {
     dashboardVersion: dashboard.version,
+    warnings: [...new Set(widgetResponses.flatMap(({ warnings }) => warnings))],
     widgets: dashboard.widgets.map((widget) => {
       if (widget.computed !== undefined) {
         return calculateComputedWidget(widget, normalizedById);
@@ -749,6 +766,52 @@ async function getDashboardData(req, res, refresh) {
   };
   aggregateCache.set(cacheKey, result);
   return sendJson(res, 200, { ...result, cached: false }, { "Cache-Control": "no-store" });
+}
+
+async function previewDashboardWidgets(dashboard, headers) {
+  const widgets = dashboard.widgets.filter((widget) => widget.computed === undefined);
+  const dealCategories = await loadDealCategoriesIfNeeded(widgets, headers);
+  const previews = await mapWithConcurrency(widgets, 4, async (widget) => {
+    const prepared = await prepareWidgetForAggregate(widget, headers, dealCategories);
+    const response = await fetch(`${apiBase}/v1/${widget.entity}/aggregate`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify(buildAggregateRequest(prepared.widget, dashboard.period))
+    });
+
+    return { response, warnings: prepared.warnings };
+  });
+
+  if (previews.some(({ response }) => !response.ok)) {
+    throw new AiDashboardError("ai_preview_failed", "Не удалось проверить агрегаты для конверсии.");
+  }
+
+  return { warnings: [...new Set(previews.flatMap(({ warnings }) => warnings))] };
+}
+
+async function prepareWidgetForAggregate(widget, headers, dealCategories) {
+  if (widget.entity !== "deals" || !Array.isArray(widget.categoryExclusions) || widget.categoryExclusions.length === 0) {
+    return { widget, warnings: [] };
+  }
+
+  const categories = dealCategories || await loadDealCategories(headers);
+  return resolveCategoryExclusions(widget, categories);
+}
+
+async function loadDealCategoriesIfNeeded(widgets, headers) {
+  const needed = widgets.some((widget) => widget.entity === "deals" && Array.isArray(widget.categoryExclusions) && widget.categoryExclusions.length > 0);
+  return needed ? loadDealCategories(headers) : undefined;
+}
+
+async function loadDealCategories(headers) {
+  const response = await fetch(`${apiBase}/v1/deal-categories`, { headers });
+  const payload = await readJson(response);
+
+  if (!response.ok) {
+    throw new AiDashboardError("ai_preview_failed", "Не удалось получить справочник воронок для фильтра.");
+  }
+
+  return Array.isArray(payload.data) ? payload.data : [];
 }
 
 async function loadDashboardLabelMaps(dashboard, headers) {

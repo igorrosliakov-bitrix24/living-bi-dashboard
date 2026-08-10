@@ -148,7 +148,7 @@ async function loadDashboardData(refresh = false) {
       throw new Error(payload.message || "Не удалось получить агрегаты.");
     }
 
-    renderDashboardData(payload.widgets);
+    renderDashboardData(payload.widgets, payload.warnings);
     if (refresh) {
       refreshStatus.textContent = "Показатели обновлены.";
     }
@@ -166,7 +166,7 @@ async function loadDashboardData(refresh = false) {
 
 refreshDataButton.addEventListener("click", () => loadDashboardData(true));
 
-function renderDashboardData(widgets) {
+function renderDashboardData(widgets, warnings = []) {
   if (dashboardSpec) {
     dashboardScope.textContent = `В отчёте: ${dashboardSpec.widgets.length} виджета · период: ${formatPeriod(dashboardSpec.period?.preset)} · данные: ${[...new Set(dashboardSpec.widgets.filter((widget) => widget.entity).map((widget) => widget.entity))].join(", ")}`;
   }
@@ -191,6 +191,10 @@ function renderDashboardData(widgets) {
 
   if (widgets.some((widget) => widget.truncated)) {
     dashboardScope.textContent = `${dashboardScope.textContent} · данные ограничены выборкой`;
+  }
+
+  if (Array.isArray(warnings) && warnings.length > 0) {
+    dashboardScope.textContent = `${dashboardScope.textContent} · ${warnings.join(" ")}`;
   }
 }
 

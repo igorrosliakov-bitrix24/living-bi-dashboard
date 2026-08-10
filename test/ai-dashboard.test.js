@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createDevelopmentFallback, createDevelopmentRequest, createDevelopmentRequestCompletion, createProposalFromPatch, createVisualCommandProposal, extractAiToolCalls, needsAggregatePreview } from "../lib/ai-dashboard.js";
+import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createConversionCommandProposal, createDevelopmentFallback, createDevelopmentRequest, createDevelopmentRequestCompletion, createProposalFromPatch, createVisualCommandProposal, extractAiToolCalls, needsAggregatePreview } from "../lib/ai-dashboard.js";
 import { createInitialDashboard } from "../lib/dashboard-spec.js";
 
 test("creates a constrained tool request without CRM records", () => {
@@ -120,4 +120,15 @@ test("turns a supported visual command into a safe dashboard proposal", () => {
 test("leaves a new-widget request for BitrixGPT analysis", () => {
   const proposal = createVisualCommandProposal("Добавь новый виджет по задачам", createInitialDashboard());
   assert.equal(proposal, null);
+});
+
+test("turns the new-client conversion request into a previewable dashboard proposal", () => {
+  const dashboard = createInitialDashboard();
+  const proposal = createConversionCommandProposal("Конверсию считай только по новым клиентам, исключи воронку Тест, период — текущий квартал", dashboard);
+
+  assert.equal(proposal.dashboard.period.preset, "this_quarter");
+  assert.deepEqual(proposal.dashboard.widgets[0].filter, { isReturning: false });
+  assert.deepEqual(proposal.dashboard.widgets[0].categoryExclusions, ["Тест"]);
+  assert.ok(proposal.dashboard.widgets.some((widget) => widget.id === "new-client-conversion"));
+  assert.ok(buildDashboardDiff(dashboard, proposal.dashboard).includes("Период данных: текущий квартал."));
 });

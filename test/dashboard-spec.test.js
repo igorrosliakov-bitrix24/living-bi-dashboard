@@ -66,6 +66,15 @@ test("accepts supported visual types, filters, and widget period overrides", () 
   assert.equal(validateDashboardSpec(dashboard).valid, false);
 });
 
+test("accepts a bounded named funnel exclusion for deal widgets", () => {
+  const dashboard = createInitialDashboard();
+  dashboard.widgets[0].categoryExclusions = ["Тест"];
+
+  assert.equal(validateDashboardSpec(dashboard).valid, true);
+  dashboard.widgets[0].categoryExclusions = [];
+  assert.equal(validateDashboardSpec(dashboard).valid, false);
+});
+
 test("rejects unimplemented or unexpected properties in a dashboard patch result", () => {
   const dashboard = createInitialDashboard();
   dashboard.widgets[0].options.runtimeCode = "fetch('https://example.com')";
