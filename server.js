@@ -14,7 +14,7 @@ import { resolveDashboardEditAccess } from "./lib/dashboard-access.js";
 import { buildVibeHeaders, getGatewayAuthorization, getGatewayUser } from "./lib/gateway.js";
 import { GatewaySessionStore } from "./lib/gateway-session.js";
 import { RequestBodyError, readJsonBody } from "./lib/request-body.js";
-import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createDevelopmentRequest, createProposalFromPatch, extractAiToolCalls } from "./lib/ai-dashboard.js";
+import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createDevelopmentRequest, createProposalFromPatch, extractAiToolCalls, needsAggregatePreview } from "./lib/ai-dashboard.js";
 import { validateDashboardSpec } from "./lib/dashboard-spec.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -427,11 +427,12 @@ async function runAiToolLoop({ command, current, headers, req }) {
 
     for (const call of calls) {
       if (call.name === "apply_changes") {
-        if (!previewed) {
-          throw new AiDashboardError("ai_preview_required", "ИИ должен проверить агрегат перед изменением отчёта.");
+        const proposal = createProposalFromPatch(current, call.arguments.patch, call.arguments.summary);
+
+        if (needsAggregatePreview(current, proposal.dashboard) && !previewed) {
+          throw new AiDashboardError("ai_preview_required", "ИИ должен проверить агрегат перед изменением источника, фильтра, периода или нового виджета.");
         }
 
-        const proposal = createProposalFromPatch(current, call.arguments.patch, call.arguments.summary);
         const fieldsValidation = await validateDashboardForPortal(req, proposal.dashboard);
 
         if (!fieldsValidation.valid) {

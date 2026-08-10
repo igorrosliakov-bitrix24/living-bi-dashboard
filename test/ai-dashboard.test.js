@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createDevelopmentRequest, createProposalFromPatch, extractAiToolCalls } from "../lib/ai-dashboard.js";
+import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createDevelopmentRequest, createProposalFromPatch, extractAiToolCalls, needsAggregatePreview } from "../lib/ai-dashboard.js";
 import { createInitialDashboard } from "../lib/dashboard-spec.js";
 
 test("creates a constrained tool request without CRM records", () => {
@@ -73,4 +73,16 @@ test("builds a compact human-readable dashboard diff", () => {
     "Название отчёта: «Продажи: обзор» -> «Продажи за квартал»",
     "Сортировка «Сделки по стадиям»: по возрастанию."
   ]);
+});
+
+test("requires aggregate preview only when a dashboard data query changes", () => {
+  const current = createInitialDashboard();
+  const visualChange = structuredClone(current);
+  visualChange.widgets[0].groupBy = ["assignedById"];
+  visualChange.widgets[0].options.orientation = "horizontal";
+  assert.equal(needsAggregatePreview(current, visualChange), false);
+
+  const dataChange = structuredClone(current);
+  dataChange.period.preset = "this_quarter";
+  assert.equal(needsAggregatePreview(current, dataChange), true);
 });

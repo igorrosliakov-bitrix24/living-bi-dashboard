@@ -84,6 +84,10 @@ button:hover {
   background: #0f51d6;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 .layout {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
