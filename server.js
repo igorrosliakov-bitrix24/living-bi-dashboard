@@ -14,7 +14,7 @@ import { resolveDashboardEditAccess } from "./lib/dashboard-access.js";
 import { buildVibeHeaders, getGatewayAuthorization, getGatewayUser } from "./lib/gateway.js";
 import { GatewaySessionStore } from "./lib/gateway-session.js";
 import { RequestBodyError, readJsonBody } from "./lib/request-body.js";
-import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createDevelopmentRequest, createProposalFromPatch, createVisualCommandProposal, extractAiToolCalls, needsAggregatePreview } from "./lib/ai-dashboard.js";
+import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createDevelopmentFallback, createDevelopmentRequest, createProposalFromPatch, createVisualCommandProposal, extractAiToolCalls, needsAggregatePreview } from "./lib/ai-dashboard.js";
 import { validateDashboardSpec } from "./lib/dashboard-spec.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -362,8 +362,11 @@ async function createAiDraft(req, res) {
     return sendJson(res, 415, { error: "unsupported_content_type", message: "Передайте команду в формате JSON." });
   }
 
+  let command;
+
   try {
     const body = await readJsonBody(req);
+    command = body?.command;
     const current = dashboardStore.getCurrent();
 
     if (!Number.isInteger(body?.expectedVersion) || body.expectedVersion !== current.version) {
@@ -395,6 +398,10 @@ async function createAiDraft(req, res) {
 
     return sendJson(res, 200, { proposal: { ...result.proposal, changes: buildDashboardDiff(current, result.proposal.dashboard) } }, { "Cache-Control": "no-store" });
   } catch (error) {
+    if (error instanceof AiDashboardError && command && shouldCreateDevelopmentFallback(error)) {
+      return sendJson(res, 200, { developmentRequest: createDevelopmentFallback(command) }, { "Cache-Control": "no-store" });
+    }
+
     if (error instanceof RequestBodyError || error instanceof AiDashboardError) {
       return sendJson(res, 400, { error: error.code, message: error.message });
     }
@@ -405,6 +412,26 @@ async function createAiDraft(req, res) {
 
     throw error;
   }
+}
+
+function shouldCreateDevelopmentFallback(error) {
+  return new Set([
+    "ai_tool_required",
+    "ai_invalid_tool_call",
+    "ai_invalid_tool_arguments",
+    "ai_invalid_development_request",
+    "ai_unsupported_entity",
+    "ai_invalid_preview",
+    "ai_preview_required",
+    "ai_unknown_dashboard_field",
+    "ai_unknown_tool",
+    "ai_tool_limit",
+    "invalid_patch",
+    "invalid_patch_operation",
+    "invalid_patch_path",
+    "invalid_patch_result",
+    "protected_patch_path"
+  ]).has(error.code);
 }
 
 async function runAiToolLoop({ command, current, headers, req }) {

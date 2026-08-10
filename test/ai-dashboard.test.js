@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createDevelopmentRequest, createProposalFromPatch, createVisualCommandProposal, extractAiToolCalls, needsAggregatePreview } from "../lib/ai-dashboard.js";
+import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createDevelopmentFallback, createDevelopmentRequest, createProposalFromPatch, createVisualCommandProposal, extractAiToolCalls, needsAggregatePreview } from "../lib/ai-dashboard.js";
 import { createInitialDashboard } from "../lib/dashboard-spec.js";
 
 test("creates a constrained tool request without CRM records", () => {
@@ -51,6 +51,14 @@ test("redacts credentials from a development request", () => {
 
   assert.match(request.markdown, /\[скрыто\]/);
   assert.doesNotMatch(request.markdown, /secret|token-value/);
+});
+
+test("creates a general development request when AI cannot prepare a safe change", () => {
+  const request = createDevelopmentFallback("Конверсию считай только по новым клиентам");
+
+  assert.match(request.markdown, /Конверсию считай только по новым клиентам/);
+  assert.match(request.markdown, /Проанализировать данные и поля портала/);
+  assert.match(request.markdown, /Критерии готовности/);
 });
 
 test("accepts an apply_changes tool call and validates its patch", () => {
