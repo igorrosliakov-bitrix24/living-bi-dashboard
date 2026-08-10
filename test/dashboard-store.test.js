@@ -70,3 +70,17 @@ test("includes dashboard owner in the persistent snapshot", () => {
   assert.equal(store.getSnapshot().ownerId, "user-1");
   assert.equal(store.getSnapshot().format, 2);
 });
+
+test("resets the dashboard to a single initial version", () => {
+  const store = new DashboardStore();
+  const changed = store.getCurrent();
+  changed.title = "Другая версия";
+  store.save(changed, 1);
+
+  const result = store.reset();
+
+  assert.equal(result.saved, true);
+  assert.equal(result.dashboard.version, 1);
+  assert.equal(result.dashboard.title, "Продажи: обзор");
+  assert.equal(store.listVersions().length, 1);
+});

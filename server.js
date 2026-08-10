@@ -93,6 +93,10 @@ const server = createServer(async (req, res) => {
       return restoreDashboard(req, res);
     }
 
+    if (url.pathname === "/api/dashboard/reset" && req.method === "POST") {
+      return resetDashboard(req, res);
+    }
+
     if (url.pathname === "/api/dashboard/ai-draft" && req.method === "POST") {
       return createAiDraft(req, res);
     }
@@ -528,6 +532,16 @@ async function restoreDashboard(req, res) {
 
     throw error;
   }
+}
+
+async function resetDashboard(req, res) {
+  if (!canEditDashboard(req, res)) {
+    return;
+  }
+
+  const result = await dashboardStore.reset();
+  aggregateCache.clear();
+  return sendJson(res, 200, result, { "Cache-Control": "no-store" });
 }
 
 function canEditDashboard(req, res) {

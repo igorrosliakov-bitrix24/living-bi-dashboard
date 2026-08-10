@@ -1,4 +1,3 @@
-const refreshDashboardButton = document.querySelector("#refreshDashboard");
 const form = document.querySelector("#aiCommandForm");
 const textarea = document.querySelector("#aiCommand");
 const authState = document.querySelector("#authState");
@@ -16,6 +15,7 @@ const dashboardTitleInput = document.querySelector("#dashboardTitleInput");
 const chartTitleInput = document.querySelector("#chartTitleInput");
 const chartSortInput = document.querySelector("#chartSortInput");
 const dashboardPeriodInput = document.querySelector("#dashboardPeriodInput");
+const resetDashboardButton = document.querySelector("#resetDashboard");
 const editorStatus = document.querySelector("#editorStatus");
 const editorMessage = document.querySelector("#editorMessage");
 const aiStatus = document.querySelector("#aiStatus");
@@ -32,7 +32,6 @@ let selectedEntity = "deals";
 let availableEntities = [];
 let demoSources = {};
 
-refreshDashboardButton.addEventListener("click", () => loadDashboardData(true));
 checkSession();
 loadAvailableEntities();
 loadDashboardSpec();
@@ -58,17 +57,17 @@ async function loadAvailableEntities() {
 function renderEntityList() {
   reportList.replaceChildren(...availableEntities.map((entity) => {
     const button = document.createElement("button");
-    button.className = `report${entity.id === selectedEntity ? " active" : ""}`;
+    button.className = `report${entity.code === selectedEntity ? " active" : ""}`;
     button.type = "button";
 
     const title = document.createElement("span");
     title.textContent = entity.title;
     const description = document.createElement("small");
-    description.textContent = entity.id === "deals" ? "Используется в текущем отчёте" : "Доступно для нового виджета";
+    description.textContent = entity.code === "deals" ? "Используется в текущем отчёте" : "Доступно для нового виджета";
 
     button.append(title, description);
     button.addEventListener("click", () => {
-      selectedEntity = entity.id;
+      selectedEntity = entity.code;
       renderEntityList();
       renderSourceContext();
     });
@@ -93,7 +92,7 @@ async function loadDemoData() {
 }
 
 function renderSourceContext() {
-  const entity = availableEntities.find((item) => item.id === selectedEntity);
+  const entity = availableEntities.find((item) => item.code === selectedEntity);
   const records = demoSources[selectedEntity] || [];
   const usesEntity = dashboardSpec?.widgets.some((widget) => widget.entity === selectedEntity);
 
@@ -119,7 +118,6 @@ function renderSourceContext() {
 
 async function loadDashboardData(refresh = false) {
   try {
-    refreshDashboardButton.disabled = true;
     const response = await fetch(`/api/dashboard/data${refresh ? "?refresh=1" : ""}`);
     const payload = await response.json();
 
@@ -130,8 +128,6 @@ async function loadDashboardData(refresh = false) {
     renderDashboardData(payload.widgets);
   } catch (error) {
     chartBars.textContent = `Данные пока недоступны: ${error.message}`;
-  } finally {
-    refreshDashboardButton.disabled = false;
   }
 }
 
@@ -313,6 +309,28 @@ visualEditor.addEventListener("submit", async (event) => {
   } catch (error) {
     editorStatus.textContent = "Ошибка сохранения";
     editorStatus.className = "status status-error";
+    editorMessage.textContent = error.message;
+  }
+});
+
+resetDashboardButton.addEventListener("click", async () => {
+  if (!dashboardSpec || !window.confirm("Начать новый дашборд? История версий будет очищена.")) {
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/dashboard/reset", { method: "POST" });
+    const payload = await response.json();
+
+    if (!response.ok || !payload.saved) {
+      throw new Error(payload.message || "Не удалось создать новый дашборд.");
+    }
+
+    dashboardSpec = payload.dashboard;
+    renderDashboardEditor();
+    await Promise.all([loadDashboardData(), loadVersionHistory()]);
+    editorMessage.textContent = "Создан новый дашборд с первой версией.";
+  } catch (error) {
     editorMessage.textContent = error.message;
   }
 });
