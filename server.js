@@ -271,8 +271,11 @@ function rememberGatewaySession(req, res, url) {
     return;
   }
 
-  const sessionId = gatewaySessions.create({ authorization, user: getGatewayUser(req.headers) });
-  res.setHeader("Set-Cookie", gatewaySessions.cookie(sessionId, true));
+  const memberId = getMemberId(url.searchParams.get("member_id"));
+  const sessionId = gatewaySessions.create({ authorization, user: getGatewayUser(req.headers) }, memberId || undefined);
+  if (!memberId) {
+    res.setHeader("Set-Cookie", gatewaySessions.cookie(sessionId, true));
+  }
 }
 
 function getGatewayContext(req) {
@@ -281,7 +284,13 @@ function getGatewayContext(req) {
     return { authorization, user: getGatewayUser(req.headers) };
   }
 
-  return gatewaySessions.get(req.headers.cookie);
+  const memberSession = gatewaySessions.getById(getMemberId(req.headers["x-dashboard-member-id"]));
+  return memberSession || gatewaySessions.get(req.headers.cookie);
+}
+
+function getMemberId(value) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return typeof raw === "string" && /^[a-f0-9]{32}$/i.test(raw) ? raw : null;
 }
 
 function getRequestUser(req) {
@@ -698,7 +707,8 @@ async function serveStatic(pathname, res) {
   const body = await readFile(filePath);
   const contentType = mimeTypes[extname(filePath)] || "application/octet-stream";
 
-  res.writeHead(200, { ...securityHeaders, "Content-Type": contentType });
+  const cacheControl = extname(filePath) === ".html" || extname(filePath) === ".js" ? "no-store" : "public, max-age=3600";
+  res.writeHead(200, { ...securityHeaders, "Content-Type": contentType, "Cache-Control": cacheControl });
   res.end(body);
 }
 

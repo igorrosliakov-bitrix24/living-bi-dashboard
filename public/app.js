@@ -36,6 +36,14 @@ let aiProposal;
 let selectedEntity = "deals";
 let availableEntities = [];
 let demoSources = {};
+const placementMemberId = new URLSearchParams(window.location.search).get("member_id");
+
+function apiFetch(input, init = {}) {
+  const headers = placementMemberId
+    ? { ...init.headers, "X-Dashboard-Member-Id": placementMemberId }
+    : init.headers;
+  return fetch(input, { ...init, headers });
+}
 
 loadAvailableEntities();
 loadDashboardSpec();
@@ -43,7 +51,7 @@ loadDashboardData();
 
 async function loadAvailableEntities() {
   try {
-    const response = await fetch("/api/entities");
+    const response = await apiFetch("/api/entities");
     const payload = await response.json();
 
     if (!response.ok || !Array.isArray(payload.entities)) {
@@ -81,7 +89,7 @@ function renderEntityList() {
 
 async function loadDemoData() {
   try {
-    const response = await fetch("/api/demo-data");
+    const response = await apiFetch("/api/demo-data");
     const payload = await response.json();
 
     if (!response.ok || !payload.sources) {
@@ -127,7 +135,7 @@ async function loadDashboardData(refresh = false) {
   }
 
   try {
-    const response = await fetch(`/api/dashboard/data${refresh ? "?refresh=1" : ""}`);
+    const response = await apiFetch(`/api/dashboard/data${refresh ? "?refresh=1" : ""}`);
     const payload = await response.json();
 
     if (!response.ok || !Array.isArray(payload.widgets)) {
@@ -319,7 +327,7 @@ function formatWidgetValue(widget) {
 
 async function loadDashboardSpec() {
   try {
-    const response = await fetch("/api/dashboard");
+    const response = await apiFetch("/api/dashboard");
     const payload = await response.json();
 
     if (!response.ok || !payload.dashboard) {
@@ -338,7 +346,7 @@ async function loadDashboardSpec() {
 
 async function loadVersionHistory() {
   try {
-    const response = await fetch("/api/dashboard/versions");
+    const response = await apiFetch("/api/dashboard/versions");
     const payload = await response.json();
 
     if (!response.ok || !Array.isArray(payload.versions)) {
@@ -388,7 +396,7 @@ async function restoreDashboard(version) {
   versionMessage.textContent = `Восстанавливаем версию ${version}...`;
 
   try {
-    const response = await fetch("/api/dashboard/restore", {
+    const response = await apiFetch("/api/dashboard/restore", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ version, expectedVersion: dashboardSpec.version })
@@ -494,7 +502,7 @@ resetDashboardButton.addEventListener("click", async () => {
   }
 
   try {
-    const response = await fetch("/api/dashboard/reset", { method: "POST" });
+    const response = await apiFetch("/api/dashboard/reset", { method: "POST" });
     const payload = await response.json();
 
     if (!response.ok || !payload.saved) {
@@ -514,7 +522,7 @@ async function persistDashboard(nextDashboard, messageTarget) {
   editorStatus.textContent = "Сохраняем";
   editorStatus.className = "status status-neutral";
   messageTarget.textContent = "";
-  const response = await fetch("/api/dashboard", {
+  const response = await apiFetch("/api/dashboard", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dashboard: nextDashboard, expectedVersion: dashboardSpec.version })
@@ -589,7 +597,7 @@ form.addEventListener("submit", async (event) => {
   aiProposalPanel.hidden = true;
 
   try {
-    const response = await fetch("/api/dashboard/ai-draft", {
+    const response = await apiFetch("/api/dashboard/ai-draft", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ command, expectedVersion: dashboardSpec.version })

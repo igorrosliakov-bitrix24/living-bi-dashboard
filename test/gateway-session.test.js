@@ -23,3 +23,14 @@ test("expires sessions and rejects a missing cookie", () => {
   assert.equal(store.get("dashboard_session=expired"), null);
   assert.equal(store.get("another_cookie=value"), null);
 });
+
+test("can retrieve a short-lived session by the opaque placement member id", () => {
+  const store = new GatewaySessionStore({ now: () => 0 });
+  store.create({ authorization: "Bearer vibe_session_test", user: { id: "1" } }, "4a54f8077554318eafeb5381bec8222b");
+
+  assert.deepEqual(store.getById("4a54f8077554318eafeb5381bec8222b"), {
+    authorization: "Bearer vibe_session_test",
+    user: { id: "1" },
+    expiresAt: 30 * 60 * 1_000
+  });
+});
