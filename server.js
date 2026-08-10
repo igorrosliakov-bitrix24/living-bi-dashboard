@@ -48,6 +48,16 @@ const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", `http://${req.headers.host}`);
 
+    if (isProduction && (url.pathname === "/" || url.pathname === "/api/session")) {
+      console.info("Gateway request diagnostic", {
+        path: url.pathname,
+        hasAuthorization: Boolean(getGatewayAuthorization(req.headers)),
+        hasOAuthCode: url.searchParams.has("code"),
+        placement: url.searchParams.get("placement") || null,
+        vibeHeaders: Object.keys(req.headers).filter((name) => name.startsWith("x-vibe-"))
+      });
+    }
+
     if (url.pathname === "/api/health") {
       return sendJson(res, 200, {
         ok: true,
