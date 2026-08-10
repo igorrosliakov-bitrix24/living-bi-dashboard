@@ -16,21 +16,27 @@
         <div class="topbar-actions">
           <span id="authState" class="auth-state">Проверяем сессию портала...</span>
           <button id="refreshDashboard" type="button" title="Обновить данные">Обновить данные</button>
-          <button id="checkConnection" type="button">Обновить диагностику</button>
         </div>
       </section>
 
       <section class="layout">
         <aside class="panel">
-          <h2>Отчёты</h2>
+          <h2>Данные портала</h2>
           <div id="reportList" class="report-list">
             <span class="list-loading">Загружаем доступные сущности...</span>
           </div>
+          <section class="source-context" aria-live="polite">
+            <p class="eyebrow">Тестовые данные</p>
+            <h3 id="sourceTitle">Выберите источник</h3>
+            <p id="sourceDescription" class="editor-message"></p>
+            <ul id="sourceExamples" class="source-examples"></ul>
+          </section>
         </aside>
 
         <section class="workspace">
           <div class="chart-area">
             <p id="dashboardName" class="dashboard-name">Загружаем отчёт...</p>
+            <p id="dashboardScope" class="dashboard-scope">Загружаем состав отчёта...</p>
             <div id="metricRow" class="metric-row" aria-live="polite">
               <article>
                 <span>Загружаем данные</span>
@@ -112,26 +118,6 @@
             </section>
           </form>
 
-          <section class="diagnostics" aria-live="polite">
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">Вайбкод-платформа</p>
-                <h2>Подключение и возможности</h2>
-              </div>
-              <span id="connectionState" class="status status-neutral">Не проверено</span>
-            </div>
-
-            <p id="diagnosticsSummary" class="diagnostics-summary">
-              Проверим, что платформа видит портал и какие функции доступны этому ключу.
-            </p>
-
-            <dl id="capabilityList" class="capability-list" hidden></dl>
-
-            <details id="technicalDetails" class="technical-details" hidden>
-              <summary>Технический ответ платформы</summary>
-              <pre id="output" class="output"></pre>
-            </details>
-          </section>
         </section>
       </section>
     </main>

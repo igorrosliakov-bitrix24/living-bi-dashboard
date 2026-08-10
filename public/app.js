@@ -1,17 +1,15 @@
-const checkButton = document.querySelector("#checkConnection");
 const refreshDashboardButton = document.querySelector("#refreshDashboard");
 const form = document.querySelector("#aiCommandForm");
 const textarea = document.querySelector("#aiCommand");
-const output = document.querySelector("#output");
-const connectionState = document.querySelector("#connectionState");
-const diagnosticsSummary = document.querySelector("#diagnosticsSummary");
-const capabilityList = document.querySelector("#capabilityList");
-const technicalDetails = document.querySelector("#technicalDetails");
 const authState = document.querySelector("#authState");
 const reportList = document.querySelector("#reportList");
+const sourceTitle = document.querySelector("#sourceTitle");
+const sourceDescription = document.querySelector("#sourceDescription");
+const sourceExamples = document.querySelector("#sourceExamples");
 const metricRow = document.querySelector("#metricRow");
 const chartBars = document.querySelector("#chartBars");
 const dashboardName = document.querySelector("#dashboardName");
+const dashboardScope = document.querySelector("#dashboardScope");
 const chartTitle = document.querySelector("#chartTitle");
 const visualEditor = document.querySelector("#visualEditor");
 const dashboardTitleInput = document.querySelector("#dashboardTitleInput");
@@ -30,8 +28,10 @@ const versionList = document.querySelector("#versionList");
 const versionMessage = document.querySelector("#versionMessage");
 let dashboardSpec;
 let aiProposal;
+let selectedEntity = "deals";
+let availableEntities = [];
+let demoSources = {};
 
-checkButton.addEventListener("click", checkConnection);
 refreshDashboardButton.addEventListener("click", () => loadDashboardData(true));
 checkSession();
 loadAvailableEntities();
@@ -47,23 +47,73 @@ async function loadAvailableEntities() {
       throw new Error("Не удалось получить список сущностей.");
     }
 
-    reportList.replaceChildren(
-      ...payload.entities.map((entity, index) => {
-        const button = document.createElement("button");
-        button.className = `report${index === 0 ? " active" : ""}`;
-        button.type = "button";
-
-        const title = document.createElement("span");
-        title.textContent = entity.title;
-        const description = document.createElement("small");
-        description.textContent = "Источник данных MVP";
-
-        button.append(title, description);
-        return button;
-      })
-    );
+    availableEntities = payload.entities;
+    renderEntityList();
+    await loadDemoData();
   } catch (error) {
     reportList.textContent = `Ошибка загрузки: ${error.message}`;
+  }
+}
+
+function renderEntityList() {
+  reportList.replaceChildren(...availableEntities.map((entity) => {
+    const button = document.createElement("button");
+    button.className = `report${entity.id === selectedEntity ? " active" : ""}`;
+    button.type = "button";
+
+    const title = document.createElement("span");
+    title.textContent = entity.title;
+    const description = document.createElement("small");
+    description.textContent = entity.id === "deals" ? "Используется в текущем отчёте" : "Доступно для нового виджета";
+
+    button.append(title, description);
+    button.addEventListener("click", () => {
+      selectedEntity = entity.id;
+      renderEntityList();
+      renderSourceContext();
+    });
+    return button;
+  }));
+}
+
+async function loadDemoData() {
+  try {
+    const response = await fetch("/api/demo-data");
+    const payload = await response.json();
+
+    if (!response.ok || !payload.sources) {
+      throw new Error(payload.message || "Не удалось получить тестовые данные.");
+    }
+
+    demoSources = payload.sources;
+    renderSourceContext();
+  } catch (error) {
+    sourceDescription.textContent = error.message;
+  }
+}
+
+function renderSourceContext() {
+  const entity = availableEntities.find((item) => item.id === selectedEntity);
+  const records = demoSources[selectedEntity] || [];
+  const usesEntity = dashboardSpec?.widgets.some((widget) => widget.entity === selectedEntity);
+
+  sourceTitle.textContent = entity?.title || "Данные";
+  sourceDescription.textContent = usesEntity
+    ? "Текущий отчёт строится по этой сущности. Ниже показаны созданные тестовые записи."
+    : "Эта сущность доступна для следующего виджета. Ниже показаны созданные тестовые записи.";
+  sourceExamples.replaceChildren(...records.slice(0, 4).map((record) => {
+    const item = document.createElement("li");
+    const details = [record.stageId, record.amount ? `${formatNumber(record.amount)} руб.` : null, record.deadline ? formatDate(record.deadline) : null]
+      .filter(Boolean)
+      .join(" · ");
+    item.textContent = details ? `${record.title} (${details})` : record.title;
+    return item;
+  }));
+
+  if (records.length === 0) {
+    const item = document.createElement("li");
+    item.textContent = "Для этой сущности тестовые записи пока не созданы.";
+    sourceExamples.append(item);
   }
 }
 
@@ -125,7 +175,7 @@ function renderDashboardData(widgets) {
   );
 
   if (bar.truncated) {
-    diagnosticsSummary.textContent = "Часть числовых агрегатов рассчитана по ограниченной выборке.";
+    dashboardScope.textContent = `${dashboardScope.textContent} · данные ограничены выборкой`;
   }
 }
 
@@ -183,7 +233,7 @@ function renderVersionHistory(versions) {
       const restoreButton = document.createElement("button");
       restoreButton.type = "button";
       restoreButton.className = "secondary-button";
-      restoreButton.textContent = "Восстановить";
+      restoreButton.textContent = `Вернуться к версии ${version.version}`;
       restoreButton.addEventListener("click", () => restoreDashboard(version.version));
       item.append(restoreButton);
     }
@@ -220,7 +270,7 @@ async function restoreDashboard(version) {
     dashboardSpec = payload.dashboard;
     renderDashboardEditor();
     await Promise.all([loadDashboardData(), loadVersionHistory()]);
-    versionMessage.textContent = `Создана версия ${dashboardSpec.version} на основе версии ${version}.`;
+    versionMessage.textContent = `Создана версия ${dashboardSpec.version}: восстановлено состояние версии ${version}. История сохранена.`;
   } catch (error) {
     versionMessage.textContent = error.message;
   }
@@ -229,6 +279,7 @@ async function restoreDashboard(version) {
 function renderDashboardEditor() {
   const bar = dashboardSpec.widgets.find((widget) => widget.type === "bar");
   dashboardName.textContent = dashboardSpec.title;
+  dashboardScope.textContent = `В отчёте: ${dashboardSpec.widgets.length} виджета · период: ${formatPeriod(dashboardSpec.period?.preset)} · данные: ${[...new Set(dashboardSpec.widgets.map((widget) => widget.entity))].join(", ")}`;
   dashboardTitleInput.value = dashboardSpec.title;
   chartTitleInput.value = bar?.title || "";
   chartSortInput.value = bar?.options?.sort || "desc";
@@ -236,6 +287,8 @@ function renderDashboardEditor() {
   editorStatus.textContent = `Версия ${dashboardSpec.version}`;
   editorStatus.className = "status status-success";
   editorMessage.textContent = "";
+  renderEntityList();
+  renderSourceContext();
 }
 
 visualEditor.addEventListener("submit", async (event) => {
@@ -331,71 +384,23 @@ function renderSession(payload) {
   authState.textContent = `Gateway: ${name}`;
 }
 
-async function checkConnection() {
-  setConnectionState("Проверяем", "neutral");
-  diagnosticsSummary.textContent = "Запрашиваем сведения о портале и доступных функциях.";
-  capabilityList.hidden = true;
-  technicalDetails.hidden = true;
-
-  try {
-    const response = await fetch("/api/me");
-    const payload = await response.json();
-
-    if (!response.ok || !payload.success) {
-      throw new Error(payload.message || "Платформа вернула ошибку.");
-    }
-
-    renderDiagnostics(payload);
-    output.textContent = JSON.stringify(payload, null, 2);
-  } catch (error) {
-    setConnectionState("Ошибка", "error");
-    diagnosticsSummary.textContent = `Не удалось получить данные: ${error.message}`;
-    output.textContent = "";
-    technicalDetails.hidden = true;
-  }
-}
-
 const resizeObserver = new ResizeObserver(() => {
   window.parent.postMessage({ type: "vibe:resize", height: document.documentElement.scrollHeight }, "*");
 });
 
 resizeObserver.observe(document.documentElement);
 
-function renderDiagnostics(payload) {
-  const { portal, tariff, capabilities } = payload.data;
-  const rows = [
-    ["Портал", portal],
-    ["Тариф", tariff.name],
-    ["Приложения", availability(capabilities.apps.create.available, "создание доступно")],
-    ["Агенты", availability(capabilities.agents.create.available, "создание доступно")],
-    ["AI Router", availability(capabilities.aiRouter.chatCompletions.available, "чат-модель доступна")],
-    ["Размещение в Битрикс24", availability(capabilities.apps.bindPlacements.available, "доступно")]
-  ];
-
-  capabilityList.replaceChildren(
-    ...rows.flatMap(([term, description]) => {
-      const title = document.createElement("dt");
-      title.textContent = term;
-      const value = document.createElement("dd");
-      value.textContent = description;
-      return [title, value];
-    })
-  );
-
-  setConnectionState("Подключено", "success");
-  diagnosticsSummary.textContent =
-    "Платформа видит портал. Следующий технический шаг: выяснить способ чтения и изменения нативных BI-отчётов.";
-  capabilityList.hidden = false;
-  technicalDetails.hidden = false;
+function formatPeriod(preset) {
+  return {
+    all_time: "за всё время",
+    this_month: "этот месяц",
+    this_quarter: "этот квартал",
+    this_year: "этот год"
+  }[preset] || "не задан";
 }
 
-function availability(isAvailable, text) {
-  return isAvailable ? text : "недоступно";
-}
-
-function setConnectionState(text, state) {
-  connectionState.textContent = text;
-  connectionState.className = `status status-${state}`;
+function formatDate(value) {
+  return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", year: "numeric" }).format(new Date(value));
 }
 
 form.addEventListener("submit", async (event) => {

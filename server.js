@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInitialDashboard } from "./lib/dashboard-spec.js";
+import { demoNamespace } from "./lib/demo-seed.js";
 import { FileDashboardStore } from "./lib/file-dashboard-store.js";
 import { buildAggregateRequest, normalizeWidgetData } from "./lib/dashboard-data.js";
 import { isDashboardEntity, listDashboardEntities } from "./lib/entities.js";
@@ -104,6 +105,10 @@ const server = createServer(async (req, res) => {
       return listEntities(res);
     }
 
+    if (url.pathname === "/api/demo-data" && req.method === "GET") {
+      return getDemoData(req, res);
+    }
+
     const fieldsMatch = url.pathname.match(/^\/api\/entities\/([a-z-]+)\/fields$/);
 
     if (fieldsMatch && req.method === "GET") {
@@ -185,6 +190,54 @@ async function getEntityFields(req, res, entity) {
 
   const response = await fetch(`${apiBase}/v1/${entity}/fields`, { headers });
   return sendJson(res, response.status, await readJson(response));
+}
+
+async function getDemoData(req, res) {
+  const headers = resolveVibeHeaders(req);
+
+  if (!headers) {
+    return sendGatewayRequired(res);
+  }
+
+  const entities = ["deals", "companies", "tasks"];
+  const response = await fetch(`${apiBase}/v1/batch`, {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      calls: entities.map((entity) => ({
+        id: entity,
+        entity,
+        action: "list",
+        params: {
+          filter: { title: { "$contains": demoNamespace } },
+          select: ["title", "stageId", "amount", "deadline"],
+          limit: 50,
+          withTotal: false
+        }
+      }))
+    })
+  });
+  const payload = await readJson(response);
+
+  if (!response.ok) {
+    return sendJson(res, response.status, { error: "demo_data_failed", message: "Не удалось получить тестовые данные." });
+  }
+
+  const sources = Object.fromEntries(entities.map((entity) => [entity, sanitizeDemoRecords(payload.data?.results?.[entity]) ]));
+  return sendJson(res, 200, { sources }, { "Cache-Control": "no-store" });
+}
+
+function sanitizeDemoRecords(records) {
+  if (!Array.isArray(records)) {
+    return [];
+  }
+
+  return records.map((record) => ({
+    title: typeof record.title === "string" ? record.title : "Без названия",
+    stageId: typeof record.stageId === "string" ? record.stageId : null,
+    amount: typeof record.amount === "number" ? record.amount : null,
+    deadline: typeof record.deadline === "string" ? record.deadline : null
+  }));
 }
 
 function resolveVibeHeaders(req) {
