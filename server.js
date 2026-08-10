@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createInitialDashboard } from "./lib/dashboard-spec.js";
 import { demoNamespace } from "./lib/demo-seed.js";
 import { FileDashboardStore } from "./lib/file-dashboard-store.js";
-import { buildAggregateRequest, normalizeWidgetData } from "./lib/dashboard-data.js";
+import { buildAggregateRequest, calculateComputedWidget, normalizeWidgetData } from "./lib/dashboard-data.js";
 import { isDashboardEntity, listDashboardEntities } from "./lib/entities.js";
 import { extractFieldNames, validateDashboardFields } from "./lib/dashboard-fields.js";
 import { mapWithConcurrency, TtlCache } from "./lib/ttl-cache.js";
@@ -461,7 +461,7 @@ async function validateDashboardForPortal(req, dashboard) {
     return { valid: false, errors: ["Для проверки полей нужна сессия Gateway."] };
   }
 
-  const entities = [...new Set(dashboard.widgets.map((widget) => widget.entity))];
+  const entities = [...new Set(dashboard.widgets.filter((widget) => widget.computed === undefined).map((widget) => widget.entity))];
   const userId = getGatewayUser(req.headers)?.id || "local";
   const responses = await mapWithConcurrency(entities, 4, async (entity) => {
     const cacheKey = `${userId}:${entity}`;
@@ -581,8 +581,9 @@ async function getDashboardData(req, res, refresh) {
     return sendJson(res, 200, { ...cached, cached: true }, { "Cache-Control": "no-store" });
   }
 
-  const labelMaps = await loadDashboardLabelMaps(dashboard, headers);
-  const widgetResponses = await mapWithConcurrency(dashboard.widgets, 4, async (widget) => {
+  const sourceWidgets = dashboard.widgets.filter((widget) => widget.computed === undefined);
+  const labelMaps = await loadDashboardLabelMaps({ ...dashboard, widgets: sourceWidgets }, headers);
+  const widgetResponses = await mapWithConcurrency(sourceWidgets, 4, async (widget) => {
     const response = await fetch(`${apiBase}/v1/${widget.entity}/aggregate`, {
       method: "POST",
       headers: { ...headers, "Content-Type": "application/json" },
@@ -602,9 +603,16 @@ async function getDashboardData(req, res, refresh) {
     });
   }
 
+  const normalizedById = new Map(widgetResponses.map(({ widget, payload }) => [widget.id, normalizeWidgetData(widget, payload, labelMaps)]));
   const result = {
     dashboardVersion: dashboard.version,
-    widgets: widgetResponses.map(({ widget, payload }) => normalizeWidgetData(widget, payload, labelMaps))
+    widgets: dashboard.widgets.map((widget) => {
+      if (widget.computed !== undefined) {
+        return calculateComputedWidget(widget, normalizedById);
+      }
+
+      return normalizedById.get(widget.id);
+    })
   };
   aggregateCache.set(cacheKey, result);
   return sendJson(res, 200, { ...result, cached: false }, { "Cache-Control": "no-store" });

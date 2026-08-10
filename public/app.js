@@ -160,7 +160,7 @@ function renderDashboardData(widgets) {
       const title = document.createElement("span");
       title.textContent = widget.title;
       const value = document.createElement("strong");
-      value.textContent = formatNumber(widget.value);
+      value.textContent = formatWidgetValue(widget);
       card.append(title, value);
       return card;
     })
@@ -302,6 +302,14 @@ function createLegend(widget) {
 function getWidgetColor(widget, index) {
   const colors = widget.colors?.length ? widget.colors : ["#2fc6f6"];
   return colors[index % colors.length];
+}
+
+function formatWidgetValue(widget) {
+  if (widget.format === "percent") {
+    return `${(widget.value * 100).toFixed(1)}%`;
+  }
+
+  return formatNumber(widget.value);
 }
 
 async function loadDashboardSpec() {

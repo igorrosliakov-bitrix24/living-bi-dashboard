@@ -5,7 +5,6 @@ import {
   createExistingDemoCalls,
   createTaskCalls,
   demoNamespace,
-  hasExistingDemoRecords,
   listExistingDemoEntities
 } from "../lib/demo-seed.js";
 
@@ -37,7 +36,7 @@ if (existingEntities.length > 0 && !hasCompleteSalesDemo) {
   throw new Error(`${demoNamespace} уже есть на портале. Скрипт остановлен, чтобы не создавать дубликаты.`);
 }
 
-if (!hasExistingDemoRecords(existing.results) || hasCompleteSalesDemo) {
+if (!existingEntities.includes("tasks")) {
   const owner = await getOwner();
   const tasks = await batch(createTaskCalls(owner.userId));
   ensureSucceeded(tasks, "задач");

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildAggregateRequest, buildPeriodFilter, normalizeWidgetData } from "../lib/dashboard-data.js";
+import { buildAggregateRequest, buildPeriodFilter, calculateComputedWidget, normalizeWidgetData } from "../lib/dashboard-data.js";
 
 test("builds a count aggregate with an optional grouping", () => {
   const request = buildAggregateRequest({
@@ -105,4 +105,21 @@ test("normalizes absent and numeric aggregate values to zero", () => {
     colors: ["#2fc6f6", "#0057d9", "#00a2e8", "#30b47a", "#ff9f43", "#e85d75"],
     truncated: false
   });
+});
+
+test("calculates a KPI ratio without evaluating arbitrary code", () => {
+  const widget = {
+    id: "conversion",
+    type: "kpi",
+    title: "Конверсия",
+    computed: { expr: "won / total", format: "percent" }
+  };
+  const result = calculateComputedWidget(widget, new Map([
+    ["won", { value: 12 }],
+    ["total", { value: 48 }]
+  ]));
+
+  assert.equal(result.value, 0.25);
+  assert.equal(result.format, "percent");
+  assert.equal(calculateComputedWidget(widget, new Map([["won", { value: 1 }], ["total", { value: 0 }]])).value, 0);
 });

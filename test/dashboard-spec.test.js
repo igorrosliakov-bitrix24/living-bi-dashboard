@@ -75,3 +75,33 @@ test("rejects unimplemented or unexpected properties in a dashboard patch result
   assert.equal(result.valid, false);
   assert.ok(result.errors.some((error) => error.includes("runtimeCode")));
 });
+
+test("accepts a constrained computed KPI and rejects executable expressions", () => {
+  const dashboard = createInitialDashboard();
+  dashboard.widgets.push({
+    id: "deal-share",
+    type: "kpi",
+    title: "Доля сделок",
+    computed: { expr: "deal-count / deal-count", format: "percent" }
+  });
+
+  assert.equal(validateDashboardSpec(dashboard).valid, true);
+  dashboard.widgets[2].computed.expr = "process.exit()";
+  assert.equal(validateDashboardSpec(dashboard).valid, false);
+});
+
+test("rejects computed KPI references to absent widgets and source properties", () => {
+  const dashboard = createInitialDashboard();
+  dashboard.widgets.push({
+    id: "deal-share",
+    type: "kpi",
+    title: "Доля сделок",
+    entity: "deals",
+    computed: { expr: "missing / deal-count", format: "percent" }
+  });
+
+  const result = validateDashboardSpec(dashboard);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => error.includes("сущность")));
+  assert.ok(result.errors.some((error) => error.includes("существующие KPI")));
+});
