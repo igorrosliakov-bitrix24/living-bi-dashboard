@@ -13,6 +13,7 @@
           <p class="eyebrow">Битрикс24 BI</p>
           <h1>AI-редактор отчётов</h1>
         </div>
+        <button id="refreshData" class="secondary-button" type="button">Обновить показатели</button>
       </section>
 
       <section class="layout">
@@ -33,6 +34,7 @@
           <div class="chart-area">
             <p id="dashboardName" class="dashboard-name">Загружаем отчёт...</p>
             <p id="dashboardScope" class="dashboard-scope">Загружаем состав отчёта...</p>
+            <p id="refreshStatus" class="refresh-status" aria-live="polite"></p>
             <div id="metricRow" class="metric-row" aria-live="polite">
               <article>
                 <span>Загружаем данные</span>
@@ -40,8 +42,8 @@
               </article>
             </div>
 
-            <h2 id="chartTitle" class="chart-title">Загружаем график...</h2>
-            <div id="chartBars" class="bars" aria-label="График сделок по стадиям">
+            <h2 id="chartTitle" class="chart-title">Виджеты отчёта</h2>
+            <div id="chartBars" class="widget-grid" aria-live="polite">
               <span class="bars-loading">Загружаем агрегаты...</span>
             </div>
           </div>
@@ -68,6 +70,27 @@
                 <select id="chartSortInput" name="chartSort">
                   <option value="desc">По убыванию</option>
                   <option value="asc">По возрастанию</option>
+                </select>
+              </label>
+              <label>
+                Группировка графика
+                <select id="chartGroupByInput" name="chartGroupBy">
+                  <option value="stageId">По стадиям</option>
+                  <option value="assignedById">По менеджерам</option>
+                  <option value="companyId">По компаниям</option>
+                </select>
+              </label>
+              <label>
+                Ориентация графика
+                <select id="chartOrientationInput" name="chartOrientation">
+                  <option value="vertical">Вертикальная</option>
+                  <option value="horizontal">Горизонтальная</option>
+                </select>
+              </label>
+              <label>
+                Палитра
+                <select id="chartPaletteInput" name="chartPalette">
+                  <option value="bitrix24">Битрикс24</option>
                 </select>
               </label>
               <label>

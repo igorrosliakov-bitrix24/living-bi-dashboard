@@ -56,14 +56,16 @@ test("normalizes aggregate responses without exposing source records", () => {
       groups: [{ stageId: "NEW", count: 4 }, { count: 3 }],
       meta: { truncated: true }
     }
-  });
+  }, { stageId: { NEW: "Новая" } });
 
   assert.deepEqual(result, {
     id: "deals-by-stage",
     type: "bar",
     title: "Сделки по стадиям",
     value: 7,
-    groups: [{ label: "NEW", value: 4 }],
+    groups: [{ label: "Новая", value: 4 }],
+    options: { sort: "desc", limit: 1 },
+    colors: ["#2fc6f6", "#0057d9", "#00a2e8", "#30b47a", "#ff9f43", "#e85d75"],
     truncated: true
   });
 });
@@ -99,6 +101,8 @@ test("normalizes absent and numeric aggregate values to zero", () => {
     title: "Выручка",
     value: 0,
     groups: [],
+    options: {},
+    colors: ["#2fc6f6", "#0057d9", "#00a2e8", "#30b47a", "#ff9f43", "#e85d75"],
     truncated: false
   });
 });

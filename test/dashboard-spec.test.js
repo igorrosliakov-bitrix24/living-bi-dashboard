@@ -57,11 +57,21 @@ test("accepts supported visual types, filters, and widget period overrides", () 
     type: "donut",
     filter: { stageId: { "$in": ["NEW", "WON"] } },
     period: { field: "createdAt", preset: "this_month" },
-    options: { color: "#2fc6f6", orientation: "horizontal" }
+    options: { color: "#2fc6f6", orientation: "horizontal", palette: "bitrix24" }
   };
 
   assert.deepEqual(validateDashboardSpec(dashboard), { valid: true, errors: [] });
 
   dashboard.widgets[0].filter = { "$or": [] };
   assert.equal(validateDashboardSpec(dashboard).valid, false);
+});
+
+test("rejects unimplemented or unexpected properties in a dashboard patch result", () => {
+  const dashboard = createInitialDashboard();
+  dashboard.widgets[0].options.runtimeCode = "fetch('https://example.com')";
+
+  const result = validateDashboardSpec(dashboard);
+
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => error.includes("runtimeCode")));
 });

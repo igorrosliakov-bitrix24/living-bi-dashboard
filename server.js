@@ -581,6 +581,7 @@ async function getDashboardData(req, res, refresh) {
     return sendJson(res, 200, { ...cached, cached: true }, { "Cache-Control": "no-store" });
   }
 
+  const labelMaps = await loadDashboardLabelMaps(dashboard, headers);
   const widgetResponses = await mapWithConcurrency(dashboard.widgets, 4, async (widget) => {
     const response = await fetch(`${apiBase}/v1/${widget.entity}/aggregate`, {
       method: "POST",
@@ -603,10 +604,48 @@ async function getDashboardData(req, res, refresh) {
 
   const result = {
     dashboardVersion: dashboard.version,
-    widgets: widgetResponses.map(({ widget, payload }) => normalizeWidgetData(widget, payload))
+    widgets: widgetResponses.map(({ widget, payload }) => normalizeWidgetData(widget, payload, labelMaps))
   };
   aggregateCache.set(cacheKey, result);
   return sendJson(res, 200, { ...result, cached: false }, { "Cache-Control": "no-store" });
+}
+
+async function loadDashboardLabelMaps(dashboard, headers) {
+  const dealGroups = new Set(
+    dashboard.widgets
+      .filter((widget) => widget.entity === "deals" && Array.isArray(widget.groupBy))
+      .flatMap((widget) => widget.groupBy)
+  );
+  const labelMaps = {};
+  const requests = [];
+
+  if (dealGroups.has("stageId")) {
+    requests.push(fetch(`${apiBase}/v1/statuses?filter%5BentityId%5D=DEAL_STAGE`, { headers })
+      .then(readJson)
+      .then((payload) => {
+        labelMaps.stageId = Object.fromEntries((payload.data || [])
+          .filter((status) => typeof status?.statusId === "string" && typeof status?.name === "string")
+          .map((status) => [status.statusId, status.name]));
+      }));
+  }
+
+  if (dealGroups.has("assignedById")) {
+    requests.push(fetch(`${apiBase}/v1/users?limit=200`, { headers })
+      .then(readJson)
+      .then((payload) => {
+        labelMaps.assignedById = Object.fromEntries((Array.isArray(payload.data) ? payload.data : [])
+          .filter((user) => Number.isInteger(user?.id))
+          .map((user) => [String(user.id), safeManagerLabel(user)]));
+      }));
+  }
+
+  await Promise.allSettled(requests);
+  return labelMaps;
+}
+
+function safeManagerLabel(user) {
+  const name = [user.name, user.lastName].filter((part) => typeof part === "string" && part.trim()).join(" ").trim();
+  return name || `Менеджер #${user.id}`;
 }
 
 async function serveStatic(pathname, res) {

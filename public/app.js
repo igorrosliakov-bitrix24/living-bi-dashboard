@@ -9,10 +9,15 @@ const chartBars = document.querySelector("#chartBars");
 const dashboardName = document.querySelector("#dashboardName");
 const dashboardScope = document.querySelector("#dashboardScope");
 const chartTitle = document.querySelector("#chartTitle");
+const refreshDataButton = document.querySelector("#refreshData");
+const refreshStatus = document.querySelector("#refreshStatus");
 const visualEditor = document.querySelector("#visualEditor");
 const dashboardTitleInput = document.querySelector("#dashboardTitleInput");
 const chartTitleInput = document.querySelector("#chartTitleInput");
 const chartSortInput = document.querySelector("#chartSortInput");
+const chartGroupByInput = document.querySelector("#chartGroupByInput");
+const chartOrientationInput = document.querySelector("#chartOrientationInput");
+const chartPaletteInput = document.querySelector("#chartPaletteInput");
 const dashboardPeriodInput = document.querySelector("#dashboardPeriodInput");
 const resetDashboardButton = document.querySelector("#resetDashboard");
 const editorStatus = document.querySelector("#editorStatus");
@@ -115,6 +120,11 @@ function renderSourceContext() {
 }
 
 async function loadDashboardData(refresh = false) {
+  if (refresh) {
+    refreshDataButton.disabled = true;
+    refreshStatus.textContent = "Обновляем показатели из портала...";
+  }
+
   try {
     const response = await fetch(`/api/dashboard/data${refresh ? "?refresh=1" : ""}`);
     const payload = await response.json();
@@ -124,14 +134,25 @@ async function loadDashboardData(refresh = false) {
     }
 
     renderDashboardData(payload.widgets);
+    if (refresh) {
+      refreshStatus.textContent = "Показатели обновлены.";
+    }
   } catch (error) {
     chartBars.textContent = `Данные пока недоступны: ${error.message}`;
+    if (refresh) {
+      refreshStatus.textContent = "Не удалось обновить показатели.";
+    }
+  } finally {
+    if (refresh) {
+      refreshDataButton.disabled = false;
+    }
   }
 }
 
+refreshDataButton.addEventListener("click", () => loadDashboardData(true));
+
 function renderDashboardData(widgets) {
   const kpis = widgets.filter((widget) => widget.type === "kpi");
-  const bar = widgets.find((widget) => widget.type === "bar");
 
   metricRow.replaceChildren(
     ...kpis.map((widget) => {
@@ -145,32 +166,142 @@ function renderDashboardData(widgets) {
     })
   );
 
-  if (!bar) {
-    chartTitle.textContent = "График отсутствует";
-    chartBars.textContent = "Для текущего отчёта нет столбчатого графика.";
-    return;
-  }
+  const visuals = widgets.filter((widget) => widget.type !== "kpi");
+  chartTitle.textContent = visuals.length > 0 ? "Виджеты отчёта" : "Графики отсутствуют";
+  chartBars.replaceChildren(...visuals.map(renderWidget));
 
-  chartTitle.textContent = bar.title;
-
-  const maxValue = Math.max(...bar.groups.map((group) => group.value), 1);
-  chartBars.replaceChildren(
-    ...bar.groups.map((group) => {
-      const item = document.createElement("div");
-      item.className = "bar-item";
-      const barValue = document.createElement("span");
-      barValue.style.height = `${Math.max((group.value / maxValue) * 100, 8)}%`;
-      barValue.title = `${group.label}: ${formatNumber(group.value)}`;
-      const label = document.createElement("small");
-      label.textContent = group.label;
-      item.append(barValue, label);
-      return item;
-    })
-  );
-
-  if (bar.truncated) {
+  if (widgets.some((widget) => widget.truncated)) {
     dashboardScope.textContent = `${dashboardScope.textContent} · данные ограничены выборкой`;
   }
+}
+
+function renderWidget(widget) {
+  const panel = document.createElement("article");
+  panel.className = "visual-widget";
+  const title = document.createElement("h3");
+  title.textContent = widget.title;
+  panel.append(title);
+
+  if (widget.type === "bar") {
+    panel.append(renderBar(widget));
+  } else if (widget.type === "line") {
+    panel.append(renderLine(widget));
+  } else if (widget.type === "pie" || widget.type === "donut") {
+    panel.append(renderPie(widget));
+  } else if (widget.type === "table") {
+    panel.append(renderTable(widget));
+  } else {
+    const message = document.createElement("p");
+    message.className = "editor-message";
+    message.textContent = "Для этого типа виджета пока нет данных.";
+    panel.append(message);
+  }
+
+  return panel;
+}
+
+function renderBar(widget) {
+  const container = document.createElement("div");
+  const horizontal = widget.options?.orientation === "horizontal";
+  container.className = `bars ${horizontal ? "bars-horizontal" : "bars-vertical"}`;
+  const maxValue = Math.max(...widget.groups.map((group) => group.value), 1);
+
+  for (const [index, group] of widget.groups.entries()) {
+    const item = document.createElement("div");
+    item.className = "bar-item";
+    const barValue = document.createElement("span");
+    const value = Math.max((group.value / maxValue) * 100, 3);
+    if (horizontal) {
+      barValue.style.width = `${value}%`;
+    } else {
+      barValue.style.height = `${Math.max(value, 8)}%`;
+    }
+    barValue.style.background = getWidgetColor(widget, index);
+    barValue.title = `${group.label}: ${formatNumber(group.value)}`;
+    const label = document.createElement("small");
+    label.textContent = `${group.label} (${formatNumber(group.value)})`;
+    item.append(label, barValue);
+    container.append(item);
+  }
+
+  return container;
+}
+
+function renderLine(widget) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "line-chart";
+  const maxValue = Math.max(...widget.groups.map((group) => group.value), 1);
+  const points = widget.groups.map((group, index) => {
+    const x = widget.groups.length === 1 ? 50 : (index / (widget.groups.length - 1)) * 100;
+    const y = 100 - ((group.value / maxValue) * 84 + 8);
+    return `${x},${y}`;
+  }).join(" ");
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 100 100");
+  svg.setAttribute("preserveAspectRatio", "none");
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+  line.setAttribute("points", points);
+  line.setAttribute("fill", "none");
+  line.setAttribute("stroke", getWidgetColor(widget, 0));
+  line.setAttribute("stroke-width", "3");
+  svg.append(line);
+  wrapper.append(svg, createLegend(widget));
+  return wrapper;
+}
+
+function renderPie(widget) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "pie-layout";
+  const total = widget.groups.reduce((sum, group) => sum + group.value, 0) || 1;
+  let current = 0;
+  const stops = widget.groups.map((group, index) => {
+    const start = current;
+    current += (group.value / total) * 100;
+    const color = getWidgetColor(widget, index);
+    return `${color} ${start}% ${current}%`;
+  });
+  const pie = document.createElement("div");
+  pie.className = `pie-chart ${widget.type === "donut" ? "pie-donut" : ""}`;
+  pie.style.background = `conic-gradient(${stops.join(", ")})`;
+  wrapper.append(pie, createLegend(widget));
+  return wrapper;
+}
+
+function renderTable(widget) {
+  const table = document.createElement("table");
+  table.className = "data-table";
+  const head = document.createElement("thead");
+  head.innerHTML = "<tr><th>Группа</th><th>Значение</th></tr>";
+  const body = document.createElement("tbody");
+  for (const group of widget.groups) {
+    const row = document.createElement("tr");
+    const label = document.createElement("td");
+    label.textContent = group.label;
+    const value = document.createElement("td");
+    value.textContent = formatNumber(group.value);
+    row.append(label, value);
+    body.append(row);
+  }
+  table.append(head, body);
+  return table;
+}
+
+function createLegend(widget) {
+  const legend = document.createElement("ul");
+  legend.className = "chart-legend";
+  for (const [index, group] of widget.groups.entries()) {
+    const item = document.createElement("li");
+    const swatch = document.createElement("span");
+    swatch.style.background = getWidgetColor(widget, index);
+    item.append(swatch, document.createTextNode(`${group.label}: ${formatNumber(group.value)}`));
+    legend.append(item);
+  }
+  return legend;
+}
+
+function getWidgetColor(widget, index) {
+  const colors = widget.colors?.length ? widget.colors : ["#2fc6f6"];
+  return colors[index % colors.length];
 }
 
 async function loadDashboardSpec() {
@@ -277,6 +408,9 @@ function renderDashboardEditor() {
   dashboardTitleInput.value = dashboardSpec.title;
   chartTitleInput.value = bar?.title || "";
   chartSortInput.value = bar?.options?.sort || "desc";
+  chartGroupByInput.value = bar?.groupBy?.[0] || "stageId";
+  chartOrientationInput.value = bar?.options?.orientation || "vertical";
+  chartPaletteInput.value = bar?.options?.palette || "bitrix24";
   dashboardPeriodInput.value = dashboardSpec.period?.preset || "all_time";
   editorStatus.textContent = `Версия ${dashboardSpec.version}`;
   editorStatus.className = "status status-success";
@@ -299,7 +433,13 @@ visualEditor.addEventListener("submit", async (event) => {
 
   if (bar) {
     bar.title = chartTitleInput.value.trim();
-    bar.options = { ...bar.options, sort: chartSortInput.value };
+    bar.groupBy = [chartGroupByInput.value];
+    bar.options = {
+      ...bar.options,
+      sort: chartSortInput.value,
+      orientation: chartOrientationInput.value,
+      palette: chartPaletteInput.value
+    };
   }
 
   try {

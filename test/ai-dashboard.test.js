@@ -10,6 +10,7 @@ test("creates a constrained tool request without CRM records", () => {
   assert.equal(request.tools.length, 5);
   assert.match(request.messages[1].content, /Отсортируй стадии/);
   assert.match(request.messages[0].content, /Не добавляй CRM-записи/);
+  assert.match(request.messages[0].content, /Фирменная палитра: bitrix24/);
 });
 
 test("accepts an apply_changes tool call and validates its patch", () => {
