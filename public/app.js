@@ -22,6 +22,7 @@ const dashboardPeriodInput = document.querySelector("#dashboardPeriodInput");
 const resetDashboardButton = document.querySelector("#resetDashboard");
 const editorStatus = document.querySelector("#editorStatus");
 const editorMessage = document.querySelector("#editorMessage");
+const unsavedChanges = document.querySelector("#unsavedChanges");
 const aiStatus = document.querySelector("#aiStatus");
 const aiProposalPanel = document.querySelector("#aiProposal");
 const aiSummary = document.querySelector("#aiSummary");
@@ -427,8 +428,32 @@ function renderDashboardEditor() {
   editorStatus.textContent = `Версия ${dashboardSpec.version}`;
   editorStatus.className = "status status-success";
   editorMessage.textContent = "";
+  updateUnsavedChanges();
   renderEntityList();
   renderSourceContext();
+}
+
+for (const input of visualEditor.querySelectorAll("input, select")) {
+  input.addEventListener("input", updateUnsavedChanges);
+  input.addEventListener("change", updateUnsavedChanges);
+}
+
+function updateUnsavedChanges() {
+  if (!dashboardSpec) {
+    unsavedChanges.hidden = true;
+    return;
+  }
+
+  const bar = dashboardSpec.widgets.find((widget) => widget.type === "bar");
+  const hasChanges = dashboardTitleInput.value.trim() !== dashboardSpec.title
+    || chartTitleInput.value.trim() !== (bar?.title || "")
+    || chartSortInput.value !== (bar?.options?.sort || "desc")
+    || chartGroupByInput.value !== (bar?.groupBy?.[0] || "stageId")
+    || chartOrientationInput.value !== (bar?.options?.orientation || "vertical")
+    || chartPaletteInput.value !== (bar?.options?.palette || "bitrix24")
+    || dashboardPeriodInput.value !== (dashboardSpec.period?.preset || "all_time");
+
+  unsavedChanges.hidden = !hasChanges;
 }
 
 visualEditor.addEventListener("submit", async (event) => {

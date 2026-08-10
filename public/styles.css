@@ -181,6 +181,13 @@ button:hover {
   margin: -8px 0 16px;
 }
 
+.unsaved-changes {
+  color: #9b5d00;
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0;
+}
+
 .metric-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
