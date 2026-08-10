@@ -404,7 +404,7 @@ async function executeAiTool({ call, current, headers, req }) {
   }
 
   if (call.name === "list_entities") {
-    return { entities: ["deals", "companies", "tasks", "activities"] };
+    return { entities: ["deals", "companies", "tasks", "activities", "calls"] };
   }
 
   if (call.name === "get_entity_fields") {

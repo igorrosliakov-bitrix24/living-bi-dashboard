@@ -152,6 +152,10 @@ async function loadDashboardData(refresh = false) {
 refreshDataButton.addEventListener("click", () => loadDashboardData(true));
 
 function renderDashboardData(widgets) {
+  if (dashboardSpec) {
+    dashboardScope.textContent = `В отчёте: ${dashboardSpec.widgets.length} виджета · период: ${formatPeriod(dashboardSpec.period?.preset)} · данные: ${[...new Set(dashboardSpec.widgets.filter((widget) => widget.entity).map((widget) => widget.entity))].join(", ")}`;
+  }
+
   const kpis = widgets.filter((widget) => widget.type === "kpi");
 
   metricRow.replaceChildren(

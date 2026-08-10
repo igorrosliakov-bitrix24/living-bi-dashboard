@@ -19,6 +19,10 @@ test("keeps only entities supported by the MVP dashboard", () => {
   ]);
 });
 
+test("includes calls when the portal exposes the calls entity", () => {
+  assert.deepEqual(listDashboardEntities([{ name: "calls" }]), [{ code: "calls", title: "Звонки" }]);
+});
+
 test("rejects unknown and malformed entity codes", () => {
   assert.equal(isDashboardEntity("deals"), true);
   assert.equal(isDashboardEntity("contacts"), false);
