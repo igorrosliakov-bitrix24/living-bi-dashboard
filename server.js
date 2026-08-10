@@ -14,7 +14,7 @@ import { resolveDashboardEditAccess } from "./lib/dashboard-access.js";
 import { buildVibeHeaders, getGatewayAuthorization, getGatewayUser } from "./lib/gateway.js";
 import { GatewaySessionStore } from "./lib/gateway-session.js";
 import { RequestBodyError, readJsonBody } from "./lib/request-body.js";
-import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createDevelopmentFallback, createDevelopmentRequest, createProposalFromPatch, createVisualCommandProposal, extractAiToolCalls, needsAggregatePreview } from "./lib/ai-dashboard.js";
+import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createDevelopmentFallback, createDevelopmentRequest, createDevelopmentRequestCompletion, createProposalFromPatch, createVisualCommandProposal, extractAiToolCalls, needsAggregatePreview } from "./lib/ai-dashboard.js";
 import { validateDashboardSpec } from "./lib/dashboard-spec.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -363,6 +363,7 @@ async function createAiDraft(req, res) {
   }
 
   let command;
+  let headers;
 
   try {
     const body = await readJsonBody(req);
@@ -373,7 +374,7 @@ async function createAiDraft(req, res) {
       return sendJson(res, 409, { error: "version_conflict", currentVersion: current.version });
     }
 
-    const headers = resolveVibeHeaders(req);
+    headers = resolveVibeHeaders(req);
 
     if (!headers) {
       return sendGatewayRequired(res);
@@ -399,7 +400,8 @@ async function createAiDraft(req, res) {
     return sendJson(res, 200, { proposal: { ...result.proposal, changes: buildDashboardDiff(current, result.proposal.dashboard) } }, { "Cache-Control": "no-store" });
   } catch (error) {
     if (error instanceof AiDashboardError && command && shouldCreateDevelopmentFallback(error)) {
-      return sendJson(res, 200, { developmentRequest: createDevelopmentFallback(command) }, { "Cache-Control": "no-store" });
+      const developmentRequest = await createAiDevelopmentFallback(command, headers);
+      return sendJson(res, 200, { developmentRequest }, { "Cache-Control": "no-store" });
     }
 
     if (error instanceof RequestBodyError || error instanceof AiDashboardError) {
@@ -411,6 +413,31 @@ async function createAiDraft(req, res) {
     }
 
     throw error;
+  }
+}
+
+async function createAiDevelopmentFallback(command, headers) {
+  if (!headers) {
+    return createDevelopmentFallback(command);
+  }
+
+  try {
+    const response = await fetch(`${apiBase}/v1/chat/completions`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify(createDevelopmentRequestCompletion(command)),
+      signal: AbortSignal.timeout(20_000)
+    });
+    const payload = await readJson(response);
+
+    if (!response.ok) {
+      return createDevelopmentFallback(command);
+    }
+
+    const call = extractAiToolCalls(payload).find((item) => item.name === "request_development");
+    return call ? createDevelopmentRequest(command, call.arguments) : createDevelopmentFallback(command);
+  } catch {
+    return createDevelopmentFallback(command);
   }
 }
 

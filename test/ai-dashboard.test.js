@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createDevelopmentFallback, createDevelopmentRequest, createProposalFromPatch, createVisualCommandProposal, extractAiToolCalls, needsAggregatePreview } from "../lib/ai-dashboard.js";
+import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createDevelopmentFallback, createDevelopmentRequest, createDevelopmentRequestCompletion, createProposalFromPatch, createVisualCommandProposal, extractAiToolCalls, needsAggregatePreview } from "../lib/ai-dashboard.js";
 import { createInitialDashboard } from "../lib/dashboard-spec.js";
 
 test("creates a constrained tool request without CRM records", () => {
@@ -59,6 +59,15 @@ test("creates a general development request when AI cannot prepare a safe change
   assert.match(request.markdown, /Конверсию считай только по новым клиентам/);
   assert.match(request.markdown, /Проанализировать данные и поля портала/);
   assert.match(request.markdown, /Критерии готовности/);
+});
+
+test("forces BitrixGPT to describe missing capabilities for a development request", () => {
+  const request = createDevelopmentRequestCompletion("Добавь недельную динамику просроченных задач по отделам");
+
+  assert.equal(request.tools.length, 1);
+  assert.equal(request.tools[0].function.name, "request_development");
+  assert.equal(request.tool_choice.function.name, "request_development");
+  assert.match(request.messages[0].content, /конкретно опиши недостающие возможности/);
 });
 
 test("accepts an apply_changes tool call and validates its patch", () => {
