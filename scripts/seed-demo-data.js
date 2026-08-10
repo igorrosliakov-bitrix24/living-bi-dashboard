@@ -5,7 +5,8 @@ import {
   createExistingDemoCalls,
   createTaskCalls,
   demoNamespace,
-  hasExistingDemoRecords
+  hasExistingDemoRecords,
+  listExistingDemoEntities
 } from "../lib/demo-seed.js";
 
 loadEnv(new URL("../.env", import.meta.url));
@@ -18,21 +19,31 @@ if (!apiKey) {
 }
 
 const existing = await batch(createExistingDemoCalls());
+const existingEntities = listExistingDemoEntities(existing.results);
 
-if (hasExistingDemoRecords(existing.results)) {
+if (existingEntities.length === 0) {
+  const companies = await batch(createCompanyCalls());
+  ensureSucceeded(companies, "компаний");
+
+  const deals = await batch(createDealCalls(companies.results));
+  ensureSucceeded(deals, "сделок");
+}
+
+const hasCompleteSalesDemo = existingEntities.length === 2
+  && existingEntities.includes("companies")
+  && existingEntities.includes("deals");
+
+if (existingEntities.length > 0 && !hasCompleteSalesDemo) {
   throw new Error(`${demoNamespace} уже есть на портале. Скрипт остановлен, чтобы не создавать дубликаты.`);
 }
 
-const companies = await batch(createCompanyCalls());
-ensureSucceeded(companies, "компаний");
+if (!hasExistingDemoRecords(existing.results) || hasCompleteSalesDemo) {
+  const owner = await getOwner();
+  const tasks = await batch(createTaskCalls(owner.userId));
+  ensureSucceeded(tasks, "задач");
+}
 
-const deals = await batch(createDealCalls(companies.results));
-ensureSucceeded(deals, "сделок");
-
-const tasks = await batch(createTaskCalls());
-ensureSucceeded(tasks, "задач");
-
-console.log(`Созданы демо-данные ${demoNamespace}: ${Object.keys(companies.results).length} компании, ${Object.keys(deals.results).length} сделок, ${Object.keys(tasks.results).length} задач.`);
+console.log(`Демо-данные ${demoNamespace} готовы.`);
 
 async function batch(calls) {
   const response = await fetch(`${apiBase}/v1/batch`, {
@@ -47,6 +58,19 @@ async function batch(calls) {
   }
 
   return payload.data;
+}
+
+async function getOwner() {
+  const response = await fetch(`${apiBase}/v1/me`, {
+    headers: { "X-Api-Key": apiKey, "Accept": "application/json" }
+  });
+  const payload = await response.json();
+
+  if (!response.ok || !Number.isInteger(Number(payload.data?.owner?.userId))) {
+    throw new Error("Не удалось определить исполнителя тестовых задач.");
+  }
+
+  return payload.data.owner;
 }
 
 function ensureSucceeded(result, label) {
