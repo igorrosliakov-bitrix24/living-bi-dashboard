@@ -36,7 +36,7 @@ test("prevents stale and invalid writes", () => {
   assert.ok(result.errors.includes("widgets должен содержать от 1 до 12 виджетов."));
 });
 
-test("lists versions and restores a prior version as a new record", () => {
+test("lists versions and makes a prior version current without adding a record", () => {
   const store = new DashboardStore();
   const changed = store.getCurrent();
   changed.title = "Продажи за квартал";
@@ -49,9 +49,15 @@ test("lists versions and restores a prior version as a new record", () => {
 
   const restored = store.restore(1, 2);
   assert.equal(restored.saved, true);
-  assert.equal(restored.dashboard.version, 3);
+  assert.equal(restored.dashboard.version, 1);
   assert.equal(restored.dashboard.title, "Продажи: обзор");
-  assert.deepEqual(store.restore(99, 3), { saved: false, error: "version_not_found" });
+  assert.equal(store.listVersions().length, 2);
+  assert.equal(store.getCurrent().version, 1);
+  assert.deepEqual(store.restore(99, 1), { saved: false, error: "version_not_found" });
+
+  const next = store.getCurrent();
+  next.title = "Новая настройка";
+  assert.equal(store.save(next, 1).dashboard.version, 3);
 });
 
 test("migrates the legacy closeDate period field", () => {
@@ -68,7 +74,7 @@ test("includes dashboard owner in the persistent snapshot", () => {
   assert.equal(store.claimOwner("user-1"), true);
   assert.equal(store.claimOwner("user-2"), false);
   assert.equal(store.getSnapshot().ownerId, "user-1");
-  assert.equal(store.getSnapshot().format, 2);
+  assert.equal(store.getSnapshot().format, 3);
 });
 
 test("resets the dashboard to a single initial version", () => {

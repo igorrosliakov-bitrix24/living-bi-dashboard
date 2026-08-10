@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { createInitialDashboard } from "../lib/dashboard-spec.js";
 import { FileDashboardStore } from "../lib/file-dashboard-store.js";
 
-test("persists and restores dashboard versions across store instances", async () => {
+test("persists dashboard versions and the selected current version", async () => {
   const directory = await mkdtemp(join(tmpdir(), "living-bi-dashboard-"));
   const statePath = join(directory, "state.json");
 
@@ -16,12 +16,13 @@ test("persists and restores dashboard versions across store instances", async ()
     const changed = first.getCurrent();
     changed.title = "Продажи за квартал";
     assert.equal((await first.save(changed, 1)).saved, true);
+    assert.equal((await first.restore(1, 2)).saved, true);
 
     const second = new FileDashboardStore({ initialSpec: createInitialDashboard(), statePath });
     await second.load();
-    assert.equal(second.getCurrent().title, "Продажи за квартал");
+    assert.equal(second.getCurrent().title, "Продажи: обзор");
     assert.equal(second.listVersions().length, 2);
-    assert.equal(JSON.parse(await readFile(statePath, "utf8")).format, 2);
+    assert.equal(JSON.parse(await readFile(statePath, "utf8")).format, 3);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -1,6 +1,5 @@
 const form = document.querySelector("#aiCommandForm");
 const textarea = document.querySelector("#aiCommand");
-const authState = document.querySelector("#authState");
 const reportList = document.querySelector("#reportList");
 const sourceTitle = document.querySelector("#sourceTitle");
 const sourceDescription = document.querySelector("#sourceDescription");
@@ -32,7 +31,6 @@ let selectedEntity = "deals";
 let availableEntities = [];
 let demoSources = {};
 
-checkSession();
 loadAvailableEntities();
 loadDashboardSpec();
 loadDashboardData();
@@ -266,7 +264,7 @@ async function restoreDashboard(version) {
     dashboardSpec = payload.dashboard;
     renderDashboardEditor();
     await Promise.all([loadDashboardData(), loadVersionHistory()]);
-    versionMessage.textContent = `Создана версия ${dashboardSpec.version}: восстановлено состояние версии ${version}. История сохранена.`;
+    versionMessage.textContent = `Текущей стала версия ${version}. История изменений сохранена.`;
   } catch (error) {
     versionMessage.textContent = error.message;
   }
@@ -374,32 +372,6 @@ function pluralizeVersion(count) {
 
 function formatNumber(value) {
   return new Intl.NumberFormat("ru-RU").format(value);
-}
-
-async function checkSession() {
-  try {
-    const response = await fetch("/api/session");
-    const payload = await response.json();
-
-    if (response.ok && payload.authenticated) {
-      renderSession(payload);
-      return;
-    }
-
-    if (payload.mode === "local_development") {
-      authState.textContent = "Локальный режим разработки";
-      return;
-    }
-
-    authState.textContent = "Откройте приложение через Битрикс24";
-  } catch {
-    authState.textContent = "Сессия пока недоступна";
-  }
-}
-
-function renderSession(payload) {
-  const name = payload.user?.name || "пользователь портала";
-  authState.textContent = `Gateway: ${name}`;
 }
 
 const resizeObserver = new ResizeObserver(() => {
