@@ -12,6 +12,7 @@ import { extractFieldNames, validateDashboardFields } from "./lib/dashboard-fiel
 import { mapWithConcurrency, TtlCache } from "./lib/ttl-cache.js";
 import { resolveDashboardEditAccess } from "./lib/dashboard-access.js";
 import { buildVibeHeaders, getGatewayAuthorization, getGatewayUser } from "./lib/gateway.js";
+import { GatewaySessionStore } from "./lib/gateway-session.js";
 import { RequestBodyError, readJsonBody } from "./lib/request-body.js";
 import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createProposalFromPatch, extractAiToolCalls } from "./lib/ai-dashboard.js";
 import { validateDashboardSpec } from "./lib/dashboard-spec.js";
@@ -34,6 +35,7 @@ const dashboardStatePath = process.env.DASHBOARD_STATE_PATH || join(
 const dashboardStore = new FileDashboardStore({ initialSpec: createInitialDashboard(), statePath: dashboardStatePath });
 const fieldCache = new TtlCache({ ttlMs: 5 * 60 * 1_000 });
 const aggregateCache = new TtlCache({ ttlMs: 5 * 60 * 1_000 });
+const gatewaySessions = new GatewaySessionStore();
 
 await dashboardStore.load();
 
@@ -48,6 +50,8 @@ const mimeTypes = {
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", `http://${req.headers.host}`);
+
+    rememberGatewaySession(req, res, url);
 
     if (isProduction && (url.pathname === "/" || url.pathname === "/api/session")) {
       console.info("Gateway request diagnostic", {
@@ -144,14 +148,13 @@ async function handleVibecodeMe(req, res) {
 }
 
 function getSession(req, res) {
-  const gatewayAuthorization = getGatewayAuthorization(req.headers);
-  const user = getGatewayUser(req.headers);
+  const context = getGatewayContext(req);
 
-  if (gatewayAuthorization) {
+  if (context) {
     return sendJson(res, 200, {
       authenticated: true,
       mode: "gateway",
-      user
+      user: context.user
     }, { "Cache-Control": "no-store" });
   }
 
@@ -245,7 +248,7 @@ function sanitizeDemoRecords(records) {
 }
 
 function resolveVibeHeaders(req) {
-  const gatewayAuthorization = getGatewayAuthorization(req.headers);
+  const gatewayAuthorization = getGatewayContext(req)?.authorization;
 
   if (gatewayAuthorization) {
     return buildVibeHeaders({ appKey, apiKey: "", gatewayAuthorization });
@@ -256,6 +259,33 @@ function resolveVibeHeaders(req) {
   }
 
   return null;
+}
+
+function rememberGatewaySession(req, res, url) {
+  if (!isProduction || (url.pathname !== "/" && url.pathname !== "/index.html")) {
+    return;
+  }
+
+  const authorization = getGatewayAuthorization(req.headers);
+  if (!authorization) {
+    return;
+  }
+
+  const sessionId = gatewaySessions.create({ authorization, user: getGatewayUser(req.headers) });
+  res.setHeader("Set-Cookie", gatewaySessions.cookie(sessionId, true));
+}
+
+function getGatewayContext(req) {
+  const authorization = getGatewayAuthorization(req.headers);
+  if (authorization) {
+    return { authorization, user: getGatewayUser(req.headers) };
+  }
+
+  return gatewaySessions.get(req.headers.cookie);
+}
+
+function getRequestUser(req) {
+  return getGatewayContext(req)?.user || null;
 }
 
 function sendGatewayRequired(res) {
@@ -462,7 +492,7 @@ async function validateDashboardForPortal(req, dashboard) {
   }
 
   const entities = [...new Set(dashboard.widgets.filter((widget) => widget.computed === undefined).map((widget) => widget.entity))];
-  const userId = getGatewayUser(req.headers)?.id || "local";
+  const userId = getRequestUser(req)?.id || "local";
   const responses = await mapWithConcurrency(entities, 4, async (entity) => {
     const cacheKey = `${userId}:${entity}`;
     const cached = fieldCache.get(cacheKey);
@@ -549,11 +579,12 @@ function canEditDashboard(req, res) {
     return true;
   }
 
-  const access = resolveDashboardEditAccess({ ownerId: dashboardStore.getOwnerId(), user: getGatewayUser(req.headers) });
+  const user = getRequestUser(req);
+  const access = resolveDashboardEditAccess({ ownerId: dashboardStore.getOwnerId(), user });
 
   if (access.allowed) {
     if (access.claimOwner) {
-      dashboardStore.claimOwner(getGatewayUser(req.headers).id);
+      dashboardStore.claimOwner(user.id);
     }
     return true;
   }
@@ -573,7 +604,7 @@ async function getDashboardData(req, res, refresh) {
   }
 
   const dashboard = dashboardStore.getCurrent();
-  const userId = getGatewayUser(req.headers)?.id || "local";
+  const userId = getRequestUser(req)?.id || "local";
   const cacheKey = `${userId}:${dashboard.version}`;
   const cached = !refresh && aggregateCache.get(cacheKey);
 
