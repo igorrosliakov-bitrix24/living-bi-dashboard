@@ -427,19 +427,33 @@ async function runAiToolLoop({ command, current, headers, req }) {
 
     for (const call of calls) {
       if (call.name === "apply_changes") {
-        const proposal = createProposalFromPatch(current, call.arguments.patch, call.arguments.summary);
+        try {
+          const proposal = createProposalFromPatch(current, call.arguments.patch, call.arguments.summary);
 
-        if (needsAggregatePreview(current, proposal.dashboard) && !previewed) {
-          throw new AiDashboardError("ai_preview_required", "ИИ должен проверить агрегат перед изменением источника, фильтра, периода или нового виджета.");
+          if (needsAggregatePreview(current, proposal.dashboard) && !previewed) {
+            throw new AiDashboardError("ai_preview_required", "ИИ должен проверить агрегат перед изменением источника, фильтра, периода или нового виджета.");
+          }
+
+          const fieldsValidation = await validateDashboardForPortal(req, proposal.dashboard);
+
+          if (!fieldsValidation.valid) {
+            throw new AiDashboardError("ai_unknown_dashboard_field", fieldsValidation.errors.join(" "));
+          }
+
+          return { kind: "proposal", proposal };
+        } catch (error) {
+          if (!(error instanceof AiDashboardError)) {
+            throw error;
+          }
+
+          messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content: JSON.stringify({ error: error.code, message: error.message, retry: "Исправь JSON Patch и вызови apply_changes ещё раз." })
+          });
         }
 
-        const fieldsValidation = await validateDashboardForPortal(req, proposal.dashboard);
-
-        if (!fieldsValidation.valid) {
-          throw new AiDashboardError("ai_unknown_dashboard_field", fieldsValidation.errors.join(" "));
-        }
-
-        return { kind: "proposal", proposal };
+        continue;
       }
 
       const result = await executeAiTool({ call, current, headers, req });

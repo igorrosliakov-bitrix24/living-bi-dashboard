@@ -12,6 +12,9 @@ test("creates a constrained tool request without CRM records", () => {
   assert.match(request.messages[0].content, /Не добавляй CRM-записи/);
   assert.match(request.messages[0].content, /Фирменная палитра: bitrix24/);
   assert.match(request.messages[0].content, /request_development/);
+  const applyChanges = request.tools.find((item) => item.function.name === "apply_changes");
+  assert.deepEqual(applyChanges.function.parameters.properties.patch.items.required, ["op", "path"]);
+  assert.deepEqual(applyChanges.function.parameters.properties.patch.items.properties.op.enum, ["add", "replace", "remove"]);
 });
 
 test("creates a copyable development request without dashboard records", () => {
