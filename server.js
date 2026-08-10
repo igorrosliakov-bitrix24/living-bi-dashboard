@@ -14,7 +14,7 @@ import { resolveDashboardEditAccess } from "./lib/dashboard-access.js";
 import { buildVibeHeaders, getGatewayAuthorization, getGatewayUser } from "./lib/gateway.js";
 import { GatewaySessionStore } from "./lib/gateway-session.js";
 import { RequestBodyError, readJsonBody } from "./lib/request-body.js";
-import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createDevelopmentRequest, createProposalFromPatch, extractAiToolCalls, needsAggregatePreview } from "./lib/ai-dashboard.js";
+import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createDevelopmentRequest, createProposalFromPatch, createVisualCommandProposal, extractAiToolCalls, needsAggregatePreview } from "./lib/ai-dashboard.js";
 import { validateDashboardSpec } from "./lib/dashboard-spec.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -374,6 +374,17 @@ async function createAiDraft(req, res) {
 
     if (!headers) {
       return sendGatewayRequired(res);
+    }
+
+    const visualProposal = createVisualCommandProposal(body.command, current);
+    if (visualProposal) {
+      const fieldsValidation = await validateDashboardForPortal(req, visualProposal.dashboard);
+
+      if (!fieldsValidation.valid) {
+        throw new AiDashboardError("ai_unknown_dashboard_field", fieldsValidation.errors.join(" "));
+      }
+
+      return sendJson(res, 200, { proposal: { ...visualProposal, changes: buildDashboardDiff(current, visualProposal.dashboard) } }, { "Cache-Control": "no-store" });
     }
 
     const result = await runAiToolLoop({ command: body.command, current, headers, req });

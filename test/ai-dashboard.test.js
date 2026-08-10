@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createDevelopmentRequest, createProposalFromPatch, extractAiToolCalls, needsAggregatePreview } from "../lib/ai-dashboard.js";
+import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createDevelopmentRequest, createProposalFromPatch, createVisualCommandProposal, extractAiToolCalls, needsAggregatePreview } from "../lib/ai-dashboard.js";
 import { createInitialDashboard } from "../lib/dashboard-spec.js";
 
 test("creates a constrained tool request without CRM records", () => {
@@ -88,4 +88,19 @@ test("requires aggregate preview only when a dashboard data query changes", () =
   const dataChange = structuredClone(current);
   dataChange.period.preset = "this_quarter";
   assert.equal(needsAggregatePreview(current, dataChange), true);
+});
+
+test("turns a supported visual command into a safe dashboard proposal", () => {
+  const dashboard = createInitialDashboard();
+  const proposal = createVisualCommandProposal("Сделай график по менеджерам горизонтальным и в цветах бренда, KPI-карточки подними наверх", dashboard);
+
+  assert.equal(proposal.dashboard.widgets[0].groupBy[0], "assignedById");
+  assert.equal(proposal.dashboard.widgets[0].options.orientation, "horizontal");
+  assert.equal(proposal.dashboard.widgets[0].options.palette, "bitrix24");
+  assert.match(proposal.summary, /KPI-карточки остаются над графиками/);
+});
+
+test("leaves a new-widget request for BitrixGPT analysis", () => {
+  const proposal = createVisualCommandProposal("Добавь новый виджет по задачам", createInitialDashboard());
+  assert.equal(proposal, null);
 });
