@@ -4,3 +4,8 @@ node_modules/
 .DS_Store
 dist/
 coverage/
+.env.*
+!.env.example
+
+# Тяжёлые материалы статей держим вне репозитория
+docs/article-materials/*.pdf
