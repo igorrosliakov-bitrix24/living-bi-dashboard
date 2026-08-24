@@ -1,0 +1,23 @@
+[Unit]
+Description=Living BI Dashboard adapter for Bitrix24 BI Connector
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/living-bi-adapter
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOST=0.0.0.0
+Environment=BI_CONNECTOR_LOG_PATH=/var/lib/living-bi-adapter/connector-events.log
+Environment=BI_CONNECTOR_STATUS_PATH=/var/lib/living-bi-adapter/connector-status.json
+Environment=DATASET_REGISTRY_PATH=/opt/data/state/dataset-specs.json
+EnvironmentFile=-/etc/living-bi-adapter.env
+ExecStart=/usr/bin/node /opt/living-bi-adapter/adapter-server.js
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
