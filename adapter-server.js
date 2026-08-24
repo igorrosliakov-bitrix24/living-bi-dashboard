@@ -8,6 +8,7 @@ import { dealIntakeTable, loadDealIntakeDataset, selectDealIntakeRows } from "./
 import { TtlCache } from "./lib/ttl-cache.js";
 import { getValidOauthState, writeOauthState } from "./lib/oauth-state.js";
 import { ConnectorStatusStore } from "./lib/connector-status.js";
+import { assertControlMethodAllowed, assertManagedDatasetName, describeOwnershipCheck } from "./lib/control-guard.js";
 import { DatasetRegistry } from "./lib/dataset-registry.js";
 import { buildDatasetDraftFromSpec } from "./lib/dataset-spec.js";
 import { loadDealDataset, selectDealDatasetRows } from "./lib/deal-dataset-engine.js";
@@ -26,7 +27,9 @@ const oauthEncryptionKey = process.env.OAUTH_STATE_ENCRYPTION_KEY || "";
 const connectorLogPath = process.env.BI_CONNECTOR_LOG_PATH || "/tmp/living-bi-connector-events.log";
 const connectorStatusPath = process.env.BI_CONNECTOR_STATUS_PATH || "/tmp/living-bi-connector-status.json";
 const datasetRegistryPath = process.env.DATASET_REGISTRY_PATH || "/opt/data/state/dataset-specs.json";
-const adapterControlKey = process.env.ADAPTER_CONTROL_KEY || installSecret;
+// Отдельный ключ обязателен: install secret виден администраторам портала
+// в настройках локального приложения и для управления не годится.
+const adapterControlKey = process.env.ADAPTER_CONTROL_KEY || "";
 const datasetCache = new TtlCache({ ttlMs: 5 * 60 * 1_000 });
 const connectorStatus = await ConnectorStatusStore.open({ statusPath: connectorStatusPath });
 const datasetRegistry = await DatasetRegistry.open({ registryPath: datasetRegistryPath });
@@ -70,8 +73,22 @@ createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/control/bitrix") {
       requireControlKey(req);
       const body = await readJsonBody(req);
-      if (!/^biconnector\.(?:dataset|source|connector)(?:\.fields)?\.(?:list|get|add|update|delete)$/.test(body.method)) throw new Error("unsupported_bitrix_method");
-      const result = await withOauth((auth) => createBitrixRestClient({ portalUrl: `https://${auth.domain}`, accessToken: auth.accessToken }).call(body.method, body.params));
+      assertControlMethodAllowed(body.method);
+      const ownership = describeOwnershipCheck(body.method, body.params);
+      const result = await withOauth(async (auth) => {
+        const client = createBitrixRestClient({ portalUrl: `https://${auth.domain}`, accessToken: auth.accessToken });
+
+        if (ownership?.kind === "name") {
+          assertManagedDatasetName(ownership.name);
+        }
+
+        if (ownership?.kind === "id") {
+          const existing = await client.call("biconnector.dataset.get", { id: ownership.id });
+          assertManagedDatasetName((existing?.item || existing)?.name);
+        }
+
+        return client.call(body.method, body.params);
+      });
       return sendJson(res, 200, { ok: true, result });
     }
     if (req.method === "POST" && url.pathname === "/control/categories") {

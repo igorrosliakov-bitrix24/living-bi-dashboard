@@ -673,7 +673,7 @@ async function deleteDataset(req, res) {
 }
 
 function createAdapterClient() {
-  return new AdapterControlClient({ baseUrl: process.env.BI_CONNECTOR_BASE_URL, controlKey: process.env.ADAPTER_CONTROL_KEY || process.env.BITRIX24_INSTALL_SECRET });
+  return new AdapterControlClient({ baseUrl: process.env.BI_CONNECTOR_BASE_URL, controlKey: process.env.ADAPTER_CONTROL_KEY });
 }
 
 async function createPublisherContext(statePath) {
@@ -696,7 +696,7 @@ async function getDatasetPublisherReadinessForEnvironment() {
     hasOauthState: existsSync(statePath), hasClientId: Boolean(process.env.BITRIX24_OAUTH_CLIENT_ID),
     hasClientSecret: Boolean(process.env.BITRIX24_OAUTH_CLIENT_SECRET), adapterReachable, usesAdapterControl: true
   });
-  if (!process.env.ADAPTER_CONTROL_KEY && !process.env.BITRIX24_INSTALL_SECRET) readiness.missing.push("защищённый ключ управления adapter-сервисом");
+  if (!process.env.ADAPTER_CONTROL_KEY) readiness.missing.push("отдельный ключ ADAPTER_CONTROL_KEY для управления adapter-сервисом");
   readiness.ready = readiness.missing.length === 0;
   if (!readiness.ready) readiness.message = `До публикации настройте: ${readiness.missing.join(", ")}.`;
   return readiness;
