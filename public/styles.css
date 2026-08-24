@@ -99,6 +99,7 @@ button:hover {
 .panel,
 .workspace,
 .ai-panel,
+.dataset-panel,
 .chart-area {
   background: #fff;
   border: 1px solid #dfe5ec;
@@ -451,6 +452,127 @@ button:hover {
   display: grid;
   font-weight: 700;
   gap: 7px;
+}
+
+.dataset-panel {
+  padding: 18px;
+}
+
+.dataset-panel > form {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.dataset-panel textarea {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  min-height: 84px;
+  padding: 10px;
+  resize: vertical;
+  width: 100%;
+}
+
+.dataset-preview {
+  border-top: 1px solid #e4e9ef;
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.dataset-publish {
+  border-top: 1px solid #e4e9ef;
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.dataset-publish p {
+  color: #526173;
+  font-size: 14px;
+  margin: 0;
+}
+
+.dataset-publish input {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  max-width: 320px;
+  padding: 10px;
+}
+
+.dataset-sync-status,
+.dataset-delete {
+  border-top: 1px solid #e4e9ef;
+  padding-top: 12px;
+}
+
+.dataset-sync-status {
+  display: grid;
+  gap: 8px;
+}
+
+.dataset-sync-status button {
+  justify-self: start;
+}
+
+.dataset-delete {
+  color: #526173;
+}
+
+.dataset-delete summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.dataset-delete label,
+.dataset-delete input {
+  display: block;
+  margin-top: 10px;
+}
+
+.danger-button {
+  background: #c43a3a;
+}
+
+.dataset-preview h3 {
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+
+.dataset-meta {
+  background: #f7f9fc;
+  border-radius: 8px;
+  color: #526173;
+  font-size: 13px;
+  padding: 12px;
+}
+
+.dataset-meta p {
+  margin: 6px 0;
+}
+
+.dataset-fields {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.dataset-field {
+  border: 1px solid #dfe5ec;
+  border-radius: 6px;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 9px 10px;
+}
+
+.dataset-field code {
+  color: #315d9f;
+  font-weight: 700;
+}
+
+.dataset-field small {
+  color: #637083;
 }
 
 input,

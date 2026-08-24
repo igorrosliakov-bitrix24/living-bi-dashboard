@@ -36,12 +36,39 @@ const developmentCopyStatus = document.querySelector("#developmentCopyStatus");
 const versionCount = document.querySelector("#versionCount");
 const versionList = document.querySelector("#versionList");
 const versionMessage = document.querySelector("#versionMessage");
+const datasetDraftForm = document.querySelector("#datasetDraftForm");
+const datasetRequest = document.querySelector("#datasetRequest");
+const datasetTarget = document.querySelector("#datasetTarget");
+const datasetDraftStatus = document.querySelector("#datasetDraftStatus");
+const datasetDraftMessage = document.querySelector("#datasetDraftMessage");
+const datasetDraftPreview = document.querySelector("#datasetDraftPreview");
+const datasetDraftTitle = document.querySelector("#datasetDraftTitle");
+const datasetDraftDescription = document.querySelector("#datasetDraftDescription");
+const datasetPlannerSummary = document.querySelector("#datasetPlannerSummary");
+const datasetDraftSource = document.querySelector("#datasetDraftSource");
+const datasetDraftPeriod = document.querySelector("#datasetDraftPeriod");
+const datasetDraftFilters = document.querySelector("#datasetDraftFilters");
+const datasetDraftFormula = document.querySelector("#datasetDraftFormula");
+const datasetDraftFields = document.querySelector("#datasetDraftFields");
+const confirmDatasetDraft = document.querySelector("#confirmDatasetDraft");
+const datasetConfirmMessage = document.querySelector("#datasetConfirmMessage");
+const datasetPublishPanel = document.querySelector("#datasetPublishPanel");
+const datasetPublishReadiness = document.querySelector("#datasetPublishReadiness");
+const datasetPublicationPreview = document.querySelector("#datasetPublicationPreview");
+const publishDataset = document.querySelector("#publishDataset");
+const datasetPublishMessage = document.querySelector("#datasetPublishMessage");
+const datasetSynchronization = document.querySelector("#datasetSynchronization");
+const refreshDatasetSynchronization = document.querySelector("#refreshDatasetSynchronization");
+const refreshDatasetData = document.querySelector("#refreshDatasetData");
+const deleteDataset = document.querySelector("#deleteDataset");
+const datasetDeleteMessage = document.querySelector("#datasetDeleteMessage");
 let dashboardSpec;
 let aiProposal;
 let developmentRequest;
 let selectedEntity = "deals";
 let availableEntities = [];
 let demoSources = {};
+let currentDatasetDraft;
 const placementMemberId = new URLSearchParams(window.location.search).get("member_id");
 
 function apiFetch(input, init = {}) {
@@ -54,6 +81,7 @@ function apiFetch(input, init = {}) {
 loadAvailableEntities();
 loadDashboardSpec();
 loadDashboardData();
+loadManagedDatasets();
 
 async function loadAvailableEntities() {
   try {
@@ -689,3 +717,277 @@ applyAiProposal.addEventListener("click", async () => {
     aiStatus.textContent = error.message;
   }
 });
+
+datasetDraftForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const request = datasetRequest.value.trim();
+  currentDatasetDraft = undefined;
+  datasetDraftMessage.textContent = "BitrixGPT анализирует запрос и готовит разрешённый рецепт...";
+  datasetDraftPreview.hidden = true;
+  datasetPublishPanel.hidden = true;
+  datasetPublishMessage.textContent = "";
+  datasetPublicationPreview.textContent = "Сначала будет выполнено безопасное сравнение схемы с Битрикс24.";
+  datasetDraftStatus.textContent = "Подготавливаем";
+  try {
+    const response = await apiFetch("/api/datasets/ai-preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ request, targetDatasetName: datasetTarget.value || undefined })
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.message || "BitrixGPT не подготовил черновик.");
+    if (payload.development) {
+      datasetDraftStatus.textContent = "Нужна доработка";
+      datasetDraftMessage.textContent = payload.development.reason;
+      return;
+    }
+    currentDatasetDraft = payload.draft;
+    renderDatasetDraft(currentDatasetDraft);
+    datasetDraftStatus.textContent = "Preview готов";
+    datasetDraftMessage.textContent = "BitrixGPT подготовил спецификацию. Сервер проверил её по разрешённому каталогу возможностей.";
+    datasetConfirmMessage.textContent = "";
+    datasetDraftPreview.hidden = false;
+  } catch (error) {
+    datasetDraftStatus.textContent = "Ошибка";
+    datasetDraftMessage.textContent = error.message;
+  }
+});
+
+confirmDatasetDraft.addEventListener("click", async () => {
+  if (!currentDatasetDraft) return;
+  confirmDatasetDraft.disabled = true;
+  datasetConfirmMessage.textContent = "Сохраняем черновик...";
+  try {
+    const response = await apiFetch("/api/datasets/draft/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ draft: currentDatasetDraft })
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.message || "Не удалось подтвердить черновик.");
+    datasetDraftStatus.textContent = "Черновик подтверждён";
+    datasetConfirmMessage.textContent = `${payload.record.message} ID: ${payload.record.id}.`;
+    await loadDatasetPublisherReadiness();
+    await loadDatasetPublicationPreview();
+    await loadDatasetSynchronization();
+    await loadManagedDatasets();
+    datasetPublishPanel.hidden = false;
+  } catch (error) {
+    datasetConfirmMessage.textContent = error.message;
+  } finally {
+    confirmDatasetDraft.disabled = false;
+  }
+});
+
+publishDataset.addEventListener("click", async () => {
+  if (!currentDatasetDraft) return;
+  if (!window.confirm(`Опубликовать датасет ${currentDatasetDraft.datasetName} в BI-конструкторе?`)) return;
+  publishDataset.disabled = true;
+  datasetPublishMessage.textContent = "Публикуем датасет в Битрикс24...";
+  try {
+    const response = await apiFetch("/api/datasets/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ draft: currentDatasetDraft, confirmed: true })
+    });
+    const payload = await readApiPayload(response);
+    if (!response.ok) throw new Error(payload.message || "Не удалось опубликовать датасет.");
+    currentDatasetDraft.datasetName = payload.result.datasetName;
+    renderDatasetDraft(currentDatasetDraft);
+    const publicationStatuses = {
+      published: "Датасет опубликован",
+      updated: "Схема датасета обновлена",
+      already_published: "Датасет уже опубликован"
+    };
+    datasetDraftStatus.textContent = publicationStatuses[payload.result.status] || "Публикация завершена";
+    datasetPublishMessage.textContent = `Готово: ${payload.result.datasetName}, ID ${payload.result.datasetId}. Откройте Рабочее место аналитика.`;
+    await loadDatasetSynchronization();
+  } catch (error) {
+    datasetPublishMessage.textContent = error.message;
+    publishDataset.disabled = false;
+  }
+});
+
+refreshDatasetSynchronization.addEventListener("click", () => loadDatasetSynchronization());
+refreshDatasetData.addEventListener("click", async () => {
+  if (!currentDatasetDraft) return;
+  refreshDatasetData.disabled = true;
+  datasetSynchronization.textContent = "Adapter пересчитывает данные из CRM...";
+  try {
+    const response = await apiFetch("/api/datasets/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ datasetName: currentDatasetDraft.datasetName }) });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.message || "Не удалось обновить данные.");
+    datasetSynchronization.textContent = `Данные обновлены: ${payload.result.rowCount} строк, ${formatDateTime(payload.result.refreshedAt)}.`;
+  } catch (error) { datasetSynchronization.textContent = error.message; }
+  finally { refreshDatasetData.disabled = false; }
+});
+
+deleteDataset.addEventListener("click", async () => {
+  if (!currentDatasetDraft || !window.confirm(`Удалить только датасет ${currentDatasetDraft.datasetName}? Графики на нём перестанут работать.`)) return;
+  deleteDataset.disabled = true;
+  datasetDeleteMessage.textContent = "Удаляем только опубликованный датасет...";
+  try {
+    const response = await apiFetch("/api/datasets/publish/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ draft: currentDatasetDraft, confirmed: true })
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.message || "Не удалось удалить датасет.");
+    datasetDraftStatus.textContent = payload.result.status === "deleted" ? "Датасет удалён" : "Датасет не найден";
+    datasetDeleteMessage.textContent = payload.result.status === "deleted"
+      ? `Удалён ${payload.result.datasetName}, ID ${payload.result.datasetId}.`
+      : "Датасет уже отсутствует — ничего не менялось.";
+    // Список управляемых наборов заполняется при загрузке, после удаления его
+    // надо перечитать, иначе исчезнувший набор остаётся в выпадающем списке.
+    currentDatasetDraft = undefined;
+    datasetPublishPanel.hidden = true;
+    datasetDraftPreview.hidden = true;
+    await loadManagedDatasets();
+    datasetTarget.value = "";
+    await loadDatasetSynchronization();
+  } catch (error) {
+    datasetDeleteMessage.textContent = error.message;
+    deleteDataset.disabled = false;
+  }
+});
+
+async function loadDatasetPublisherReadiness() {
+  datasetPublishReadiness.textContent = "Проверяем готовность контура публикации...";
+  datasetPublishMessage.textContent = "";
+  publishDataset.disabled = true;
+  try {
+    const response = await apiFetch("/api/datasets/publish/readiness");
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.message || "Не удалось проверить готовность публикации.");
+    datasetPublishReadiness.textContent = payload.readiness.message;
+    publishDataset.disabled = !payload.readiness.ready;
+  } catch (error) {
+    datasetPublishReadiness.textContent = error.message;
+    publishDataset.disabled = true;
+  }
+}
+
+const managedDatasets = new Map();
+
+async function loadManagedDatasets() {
+  try {
+    const response = await apiFetch("/api/datasets/managed");
+    const payload = await response.json();
+    if (!response.ok) return;
+    const selected = datasetTarget.value;
+    managedDatasets.clear();
+    for (const item of payload.datasets || []) managedDatasets.set(item.datasetName, item);
+    const options = [createSelectOption("Создать новый датасет", ""), ...(payload.datasets || []).map((item) => createSelectOption(`${item.title} · ${item.datasetName}`, item.datasetName))];
+    datasetTarget.replaceChildren(...options);
+    if ([...datasetTarget.options].some((option) => option.value === selected)) datasetTarget.value = selected;
+  } catch { /* Список необязателен для создания нового датасета. */ }
+}
+
+// Выбор уже опубликованного набора открывает управление им без обращения к
+// модели: иначе после перезагрузки страницы до кнопок было не добраться.
+async function selectManagedDataset() {
+  const record = managedDatasets.get(datasetTarget.value);
+
+  if (!record) {
+    currentDatasetDraft = undefined;
+    datasetDraftPreview.hidden = true;
+    datasetPublishPanel.hidden = true;
+    datasetDraftStatus.textContent = "Черновик не подготовлен";
+    datasetDraftMessage.textContent = "";
+    return;
+  }
+
+  if (!record.draft) {
+    datasetDraftMessage.textContent = "Сохранённую спецификацию этого набора прочитать не удалось. Подготовьте запрос заново.";
+    return;
+  }
+
+  currentDatasetDraft = record.draft;
+  renderDatasetDraft(currentDatasetDraft);
+  datasetDraftPreview.hidden = false;
+  datasetDraftStatus.textContent = "Опубликованный набор";
+  datasetDraftMessage.textContent = `Управление набором ${record.datasetName}. Спецификация восстановлена из реестра, обращение к BitrixGPT не требуется.`;
+  datasetConfirmMessage.textContent = "";
+  datasetPublishPanel.hidden = false;
+  await loadDatasetPublisherReadiness();
+  await loadDatasetPublicationPreview();
+  await loadDatasetSynchronization();
+}
+
+datasetTarget.addEventListener("change", () => { selectManagedDataset(); });
+
+function createSelectOption(label, value) {
+  const option = document.createElement("option");
+  option.textContent = label;
+  option.value = value;
+  return option;
+}
+
+async function loadDatasetPublicationPreview() {
+  datasetPublicationPreview.textContent = "Сравниваем схему с опубликованными датасетами...";
+  try {
+    const response = await apiFetch("/api/datasets/publish/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draft: currentDatasetDraft }) });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.message || "Не удалось сравнить схему.");
+    const labels = { create: "будет создан новый датасет", update: "будут добавлены совместимые поля", reuse: "схема уже совпадает", create_version: `будет создана новая версия ${payload.preview.nextDatasetName}` };
+    const removed = payload.preview.diff.remove.join(", ") || "нет";
+    const incompatible = payload.preview.diff.incompatible
+      .map((item) => `${item.name}: ${item.from} → ${item.to}`)
+      .join(", ") || "нет";
+    datasetPublicationPreview.textContent = `План публикации: ${labels[payload.preview.action]}. Добавить: ${payload.preview.diff.add.join(", ") || "нет"}; удалить: ${removed}; изменить тип: ${incompatible}.`;
+  } catch (error) { datasetPublicationPreview.textContent = error.message; }
+}
+
+async function readApiPayload(response) {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) return response.json();
+  return { message: response.ok ? "Сервер вернул ответ в неожиданном формате." : `Сервер публикации недоступен (HTTP ${response.status}).` };
+}
+
+async function loadDatasetSynchronization() {
+  refreshDatasetSynchronization.disabled = true;
+  datasetSynchronization.textContent = "Проверяем публичный adapter...";
+  try {
+    const response = await apiFetch("/api/datasets/publish/status");
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.message || "Не удалось получить статус синхронизации.");
+    const status = payload.synchronization;
+    if (!status?.lastSuccessAt) {
+      datasetSynchronization.textContent = `Adapter доступен. Последнего запроса BI-конструктора пока нет. OAuth-хранилище: ${payload.oauthStorage === "encrypted" ? "зашифровано" : "режим разработки"}.`;
+      return;
+    }
+    datasetSynchronization.textContent = `Последнее успешное обращение BI-конструктора: ${formatDateTime(status.lastSuccessAt)}. Запросов после запуска: ${status.requests}.`;
+  } catch (error) {
+    datasetSynchronization.textContent = error.message;
+  } finally {
+    refreshDatasetSynchronization.disabled = false;
+  }
+}
+
+function formatDateTime(value) {
+  return new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "medium" }).format(new Date(value));
+}
+
+function renderDatasetDraft(draft) {
+  datasetDraftTitle.textContent = `${draft.title} · ${draft.datasetName}`;
+  datasetDraftDescription.textContent = draft.publication.message;
+  datasetPlannerSummary.hidden = !draft.planner?.summary;
+  datasetPlannerSummary.textContent = draft.planner?.summary ? `BitrixGPT: ${draft.planner.summary}` : "";
+  datasetDraftSource.textContent = `${draft.source.entity}: ${draft.source.description}`;
+  datasetDraftPeriod.textContent = ({ current_month: "Текущий месяц", current_quarter: "Текущий квартал", current_year: "Текущий год" })[draft.period] || draft.period;
+  datasetDraftFilters.textContent = draft.filters.join("; ");
+  datasetDraftFormula.textContent = draft.formula;
+  datasetDraftFields.replaceChildren(...draft.fields.map((field) => {
+    const item = document.createElement("div");
+    item.className = "dataset-field";
+    const name = document.createElement("code");
+    name.textContent = field.code;
+    const title = document.createElement("span");
+    title.textContent = field.title;
+    const type = document.createElement("small");
+    type.textContent = field.type;
+    item.append(name, title, type);
+    return item;
+  }));
+}

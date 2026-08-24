@@ -17,6 +17,14 @@ import { RequestBodyError, readJsonBody } from "./lib/request-body.js";
 import { AiDashboardError, buildDashboardDiff, createAiCompletionRequest, createConversionCommandProposal, createDevelopmentFallback, createDevelopmentRequest, createDevelopmentRequestCompletion, createProposalFromPatch, createVisualCommandProposal, extractAiToolCalls, needsAggregatePreview } from "./lib/ai-dashboard.js";
 import { validateDashboardSpec } from "./lib/dashboard-spec.js";
 import { resolveCategoryExclusions } from "./lib/dashboard-rules.js";
+import { getBiConnectorData, getBiConnectorDescription, getBiConnectorTables } from "./lib/bi-connector-demo.js";
+import { buildDatasetDraft, confirmDatasetDraft, DatasetDraftError } from "./lib/dataset-draft.js";
+import { createDatasetPlannerRequest, DatasetPlannerError, parseDatasetPlannerResponse } from "./lib/dataset-planner.js";
+import { DatasetPublisherError, deleteDatasetDraft, getPublisherReadiness, previewDynamicDatasetPublication, publishDynamicDataset } from "./lib/dataset-publisher.js";
+import { AdapterControlClient } from "./lib/adapter-control-client.js";
+import { validateSpecCategoryNames } from "./lib/bitrix-crm-reader.js";
+import { buildDatasetDraftFromSpec } from "./lib/dataset-spec.js";
+import { BitrixRestError } from "./lib/bitrix-rest.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const publicDir = join(__dirname, "public");
@@ -37,6 +45,7 @@ const dashboardStore = new FileDashboardStore({ initialSpec: createInitialDashbo
 const fieldCache = new TtlCache({ ttlMs: 5 * 60 * 1_000 });
 const aggregateCache = new TtlCache({ ttlMs: 5 * 60 * 1_000 });
 const gatewaySessions = new GatewaySessionStore();
+const datasetDrafts = new Map();
 
 await dashboardStore.load();
 
@@ -75,11 +84,11 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/me" && req.method === "GET") {
-      return handleVibecodeMe(req, res);
+      return await handleVibecodeMe(req, res);
     }
 
     if (url.pathname === "/api/session" && req.method === "GET") {
-      return getSession(req, res);
+      return await getSession(req, res);
     }
 
     if (url.pathname === "/api/dashboard" && req.method === "GET") {
@@ -87,7 +96,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/dashboard" && req.method === "POST") {
-      return saveDashboard(req, res);
+      return await saveDashboard(req, res);
     }
 
     if (url.pathname === "/api/dashboard/versions" && req.method === "GET") {
@@ -95,19 +104,59 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/dashboard/restore" && req.method === "POST") {
-      return restoreDashboard(req, res);
+      return await restoreDashboard(req, res);
     }
 
     if (url.pathname === "/api/dashboard/reset" && req.method === "POST") {
-      return resetDashboard(req, res);
+      return await resetDashboard(req, res);
     }
 
     if (url.pathname === "/api/dashboard/ai-draft" && req.method === "POST") {
-      return createAiDraft(req, res);
+      return await createAiDraft(req, res);
+    }
+
+    if (url.pathname === "/api/datasets/draft/preview" && req.method === "POST") {
+      return await previewDatasetDraft(req, res);
+    }
+
+    if (url.pathname === "/api/datasets/ai-preview" && req.method === "POST") {
+      return await previewDatasetWithAi(req, res);
+    }
+
+    if (url.pathname === "/api/datasets/draft/confirm" && req.method === "POST") {
+      return await confirmDatasetDraftRoute(req, res);
+    }
+
+    if (url.pathname === "/api/datasets/publish/readiness" && req.method === "GET") {
+      return await getDatasetPublisherReadiness(req, res);
+    }
+
+    if (url.pathname === "/api/datasets/managed" && req.method === "GET") {
+      return await listManagedDatasets(req, res);
+    }
+
+    if (url.pathname === "/api/datasets/publish" && req.method === "POST") {
+      return await publishDataset(req, res);
+    }
+
+    if (url.pathname === "/api/datasets/publish/preview" && req.method === "POST") {
+      return await previewDatasetPublication(req, res);
+    }
+
+    if (url.pathname === "/api/datasets/refresh" && req.method === "POST") {
+      return await refreshDataset(req, res);
+    }
+
+    if (url.pathname === "/api/datasets/publish/status" && req.method === "GET") {
+      return await getDatasetPublisherStatus(req, res);
+    }
+
+    if (url.pathname === "/api/datasets/publish/delete" && req.method === "POST") {
+      return await deleteDataset(req, res);
     }
 
     if (url.pathname === "/api/dashboard/data" && req.method === "GET") {
-      return getDashboardData(req, res, url.searchParams.has("refresh"));
+      return await getDashboardData(req, res, url.searchParams.has("refresh"));
     }
 
     if (url.pathname === "/api/entities" && req.method === "GET") {
@@ -115,13 +164,32 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/demo-data" && req.method === "GET") {
-      return getDemoData(req, res);
+      return await getDemoData(req, res);
+    }
+
+    if (url.pathname === "/api/bi-connector/check" && req.method === "POST") {
+      return sendJson(res, 200, { ok: true, connector: "living-bi-dashboard" });
+    }
+
+    if (url.pathname === "/api/bi-connector/tables" && req.method === "POST") {
+      const body = await readConnectorBody(req);
+      return sendJson(res, 200, getBiConnectorTables(body.searchString));
+    }
+
+    if (url.pathname === "/api/bi-connector/table-description" && req.method === "POST") {
+      const body = await readConnectorBody(req);
+      return sendJson(res, 200, getBiConnectorDescription(body.table || body.name));
+    }
+
+    if (url.pathname === "/api/bi-connector/data" && req.method === "POST") {
+      const body = await readConnectorBody(req);
+      return sendJson(res, 200, getBiConnectorData(body));
     }
 
     const fieldsMatch = url.pathname.match(/^\/api\/entities\/([a-z-]+)\/fields$/);
 
     if (fieldsMatch && req.method === "GET") {
-      return getEntityFields(req, res, fieldsMatch[1]);
+      return await getEntityFields(req, res, fieldsMatch[1]);
     }
 
     return serveStatic(url.pathname, res);
@@ -131,6 +199,10 @@ const server = createServer(async (req, res) => {
       message: error instanceof Error ? error.message : String(error)
     });
   }
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled rejection", { message: reason instanceof Error ? reason.message : String(reason) });
 });
 
 server.listen(port, host, () => {
@@ -306,6 +378,20 @@ function sendGatewayRequired(res) {
   });
 }
 
+async function readConnectorBody(req) {
+  if (!req.headers["content-type"]?.startsWith("application/json")) {
+    return {};
+  }
+  try {
+    return await readJsonBody(req);
+  } catch (error) {
+    if (error instanceof RequestBodyError) {
+      throw new Error("Некорректный запрос коннектора BI.");
+    }
+    throw error;
+  }
+}
+
 async function saveDashboard(req, res) {
   if (!canEditDashboard(req, res)) {
     return;
@@ -427,6 +513,237 @@ async function createAiDraft(req, res) {
 
     throw error;
   }
+}
+
+async function previewDatasetDraft(req, res) {
+  if (!canEditDashboard(req, res)) return;
+  try {
+    const body = await readJsonRequest(req, "Передайте запрос к датасету в формате JSON.");
+    const draft = buildDatasetDraft({ request: body?.request });
+    return sendJson(res, 200, { draft }, { "Cache-Control": "no-store" });
+  } catch (error) {
+    return handleDatasetDraftError(error, res);
+  }
+}
+
+async function previewDatasetWithAi(req, res) {
+  if (!canEditDashboard(req, res)) return;
+  try {
+    const body = await readJsonRequest(req, "Передайте запрос к датасету в формате JSON.");
+    const headers = resolveVibeHeaders(req);
+    if (!headers) return sendGatewayRequired(res);
+
+    const response = await fetch(`${apiBase}/v1/chat/completions`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify(createDatasetPlannerRequest(body?.request)),
+      signal: AbortSignal.timeout(20_000)
+    });
+    const payload = await readJson(response);
+    if (!response.ok) {
+      throw new DatasetPlannerError("dataset_planner_failed", "BitrixGPT не смог подготовить рецепт. Повторите запрос.");
+    }
+
+    const result = parseDatasetPlannerResponse(payload, body?.request);
+    if (result.kind === "draft" && body?.targetDatasetName) {
+      const managed = await createAdapterClient().list();
+      const target = managed.result?.find((item) => item.datasetName === body.targetDatasetName && item.status === "active");
+      if (!target) throw new DatasetPlannerError("unknown_dataset_target", "Выбранный управляемый датасет не найден.");
+      result.draft.datasetName = target.datasetName;
+    }
+    return sendJson(res, 200, result.kind === "draft" ? { draft: result.draft } : { development: result.development }, { "Cache-Control": "no-store" });
+  } catch (error) {
+    if (error.name === "TimeoutError") {
+      return sendJson(res, 504, { error: "ai_timeout", message: "BitrixGPT не успел подготовить рецепт. Повторите запрос." });
+    }
+    return handleDatasetDraftError(error, res);
+  }
+}
+
+async function confirmDatasetDraftRoute(req, res) {
+  if (!canEditDashboard(req, res)) return;
+  try {
+    const body = await readJsonRequest(req, "Передайте черновик в формате JSON.");
+    const record = confirmDatasetDraft(body?.draft);
+    datasetDrafts.set(record.id, record);
+    return sendJson(res, 200, { record }, { "Cache-Control": "no-store" });
+  } catch (error) {
+    return handleDatasetDraftError(error, res);
+  }
+}
+
+async function getDatasetPublisherReadiness(req, res) {
+  if (!canEditDashboard(req, res)) return;
+  const readiness = await getDatasetPublisherReadinessForEnvironment();
+  return sendJson(res, 200, { readiness }, { "Cache-Control": "no-store" });
+}
+
+async function listManagedDatasets(req, res) {
+  if (!canEditDashboard(req, res)) return;
+  try {
+    const payload = await createAdapterClient().list();
+    const datasets = (payload.result || [])
+      .filter((item) => item.status === "active")
+      .map((item) => ({ datasetName: item.datasetName, title: item.title, updatedAt: item.updatedAt, draft: rebuildManagedDraft(item) }));
+    return sendJson(res, 200, { datasets }, { "Cache-Control": "no-store" });
+  } catch { return sendJson(res, 503, { error: "adapter_unavailable", message: "Не удалось получить список управляемых датасетов." }); }
+}
+
+// Черновик управляемого набора восстанавливается из сохранённой спецификации,
+// чтобы кнопки управления работали и после перезагрузки страницы.
+function rebuildManagedDraft(record) {
+  try {
+    const draft = buildDatasetDraftFromSpec(record.spec, { request: record.spec?.request || record.title });
+    // Имя из спецификации выводится заново и не знает про суффикс версии (_v2),
+    // который присваивается при публикации. Берём фактическое имя из реестра,
+    // иначе управление и удаление нацелятся на чужой набор.
+    return { ...draft, datasetName: record.datasetName };
+  } catch {
+    return null;
+  }
+}
+
+async function publishDataset(req, res) {
+  if (!canEditDashboard(req, res)) return;
+  try {
+    const body = await readJsonRequest(req, "Передайте подтверждение публикации в формате JSON.");
+    if (body?.confirmed !== true) {
+      throw new DatasetPublisherError("publication_confirmation_required", "Подтвердите публикацию выбранного датасета.");
+    }
+    const statePath = process.env.OAUTH_ADAPTER_STATE_PATH || "/tmp/living-bi-chepyuk-auth.json";
+    const readiness = await getDatasetPublisherReadinessForEnvironment();
+    if (!readiness.ready) {
+      throw new DatasetPublisherError("publisher_not_ready", readiness.message);
+    }
+    const { client } = await createPublisherContext(statePath);
+    await validateDraftCategories(body?.draft);
+    const result = await publishDynamicDataset({ draft: body?.draft, client, connectorBaseUrl: process.env.BI_CONNECTOR_BASE_URL, adapterClient: createAdapterClient() });
+    return sendJson(res, 200, { result }, { "Cache-Control": "no-store" });
+  } catch (error) {
+    return handleDatasetDraftError(error, res);
+  }
+}
+
+async function previewDatasetPublication(req, res) {
+  if (!canEditDashboard(req, res)) return;
+  try {
+    const body = await readJsonRequest(req, "Передайте черновик в формате JSON.");
+    const statePath = process.env.OAUTH_ADAPTER_STATE_PATH || "/tmp/living-bi-chepyuk-auth.json";
+    const { client } = await createPublisherContext(statePath);
+    await validateDraftCategories(body?.draft);
+    const preview = await previewDynamicDatasetPublication({ draft: body?.draft, client });
+    return sendJson(res, 200, { preview }, { "Cache-Control": "no-store" });
+  } catch (error) { return handleDatasetDraftError(error, res); }
+}
+
+async function refreshDataset(req, res) {
+  if (!canEditDashboard(req, res)) return;
+  try {
+    const body = await readJsonRequest(req, "Передайте имя датасета в формате JSON.");
+    if (typeof body?.datasetName !== "string" || !body.datasetName.startsWith("vibecode_ai_")) throw new DatasetPublisherError("invalid_dataset_name", "Можно обновлять только управляемые датасеты VibeCode AI.");
+    const result = await createAdapterClient().refresh(body.datasetName);
+    return sendJson(res, 200, { result }, { "Cache-Control": "no-store" });
+  } catch (error) { return handleDatasetDraftError(error, res); }
+}
+
+async function getDatasetPublisherStatus(req, res) {
+  if (!canEditDashboard(req, res)) return;
+  const health = await readAdapterHealth(process.env.BI_CONNECTOR_BASE_URL);
+  if (!health) return sendJson(res, 503, { error: "adapter_unavailable", message: "Adapter недоступен по публичному HTTPS-адресу." });
+  return sendJson(res, 200, { synchronization: health.synchronization || null, oauthStorage: health.oauthStorage || "unknown" }, { "Cache-Control": "no-store" });
+}
+
+async function deleteDataset(req, res) {
+  if (!canEditDashboard(req, res)) return;
+  try {
+    const body = await readJsonRequest(req, "Передайте подтверждение удаления в формате JSON.");
+    if (body?.confirmed !== true) {
+      throw new DatasetPublisherError("deletion_confirmation_required", "Подтвердите удаление выбранного датасета.");
+    }
+    const statePath = process.env.OAUTH_ADAPTER_STATE_PATH || "/tmp/living-bi-chepyuk-auth.json";
+    const readiness = await getDatasetPublisherReadinessForEnvironment();
+    if (!readiness.ready) throw new DatasetPublisherError("publisher_not_ready", readiness.message);
+    const { client } = await createPublisherContext(statePath);
+    const result = await deleteDatasetDraft({ draft: body?.draft, client });
+    if (["deleted", "not_found"].includes(result.status)) await createAdapterClient().remove(body.draft.datasetName);
+    return sendJson(res, 200, { result }, { "Cache-Control": "no-store" });
+  } catch (error) {
+    return handleDatasetDraftError(error, res);
+  }
+}
+
+function createAdapterClient() {
+  return new AdapterControlClient({ baseUrl: process.env.BI_CONNECTOR_BASE_URL, controlKey: process.env.ADAPTER_CONTROL_KEY || process.env.BITRIX24_INSTALL_SECRET });
+}
+
+async function createPublisherContext(statePath) {
+  void statePath;
+  return { client: createAdapterClient() };
+}
+
+async function validateDraftCategories(draft) {
+  if (!draft?.spec) throw new DatasetPublisherError("missing_dataset_spec", "У черновика нет проверенной спецификации.");
+  const categories = (await createAdapterClient().listCategories()).categories || [];
+  try { validateSpecCategoryNames(draft.spec, categories); }
+  catch (error) { throw new DatasetPublisherError(error.code || "invalid_category_filter", error.message); }
+}
+
+async function getDatasetPublisherReadinessForEnvironment() {
+  const statePath = process.env.OAUTH_ADAPTER_STATE_PATH || "/tmp/living-bi-chepyuk-auth.json";
+  const adapterReachable = await verifyAdapterHealth(process.env.BI_CONNECTOR_BASE_URL);
+  const readiness = getPublisherReadiness({
+    connectorBaseUrl: process.env.BI_CONNECTOR_BASE_URL,
+    hasOauthState: existsSync(statePath), hasClientId: Boolean(process.env.BITRIX24_OAUTH_CLIENT_ID),
+    hasClientSecret: Boolean(process.env.BITRIX24_OAUTH_CLIENT_SECRET), adapterReachable, usesAdapterControl: true
+  });
+  if (!process.env.ADAPTER_CONTROL_KEY && !process.env.BITRIX24_INSTALL_SECRET) readiness.missing.push("защищённый ключ управления adapter-сервисом");
+  readiness.ready = readiness.missing.length === 0;
+  if (!readiness.ready) readiness.message = `До публикации настройте: ${readiness.missing.join(", ")}.`;
+  return readiness;
+}
+
+async function verifyAdapterHealth(baseUrl) {
+  return Boolean(await readAdapterHealth(baseUrl));
+}
+
+async function readAdapterHealth(baseUrl) {
+  try {
+    const url = new URL(baseUrl);
+    if (url.protocol !== "https:" || url.pathname !== "/" || url.search || url.hash) return false;
+    url.pathname = "/health";
+    const response = await fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(10_000) });
+    if (!response.ok || !response.headers.get("content-type")?.includes("application/json")) return false;
+    const payload = await response.json();
+    return payload?.ok === true ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+async function readJsonRequest(req, message) {
+  if (!req.headers["content-type"]?.startsWith("application/json")) {
+    throw new DatasetDraftError("unsupported_content_type", message);
+  }
+  return readJsonBody(req);
+}
+
+function handleDatasetDraftError(error, res) {
+  if (error instanceof RequestBodyError || error instanceof DatasetDraftError || error instanceof DatasetPlannerError || error instanceof DatasetPublisherError) {
+    return sendJson(res, 400, { error: error.code || "invalid_request", message: error.message });
+  }
+  if (error instanceof BitrixRestError) {
+    return sendJson(res, 502, {
+      error: error.code || "bitrix_rest_failed",
+      message: `Битрикс24 отклонил публикацию: ${error.message}`
+    });
+  }
+
+  // Неизвестная ошибка раньше выбрасывалась наружу и роняла процесс целиком.
+  console.error("Dataset publisher request failed", { code: error?.code || null, message: error instanceof Error ? error.message : String(error) });
+  return sendJson(res, 502, {
+    error: error?.code || "dataset_operation_failed",
+    message: error instanceof Error ? error.message : String(error)
+  });
 }
 
 async function createAiDevelopmentFallback(command, headers) {

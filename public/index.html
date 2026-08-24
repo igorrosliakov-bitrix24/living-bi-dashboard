@@ -152,6 +152,66 @@
             </section>
           </form>
 
+          <section class="dataset-panel" aria-live="polite">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">AI Dataset Publisher</p>
+                <h2>Подготовить набор данных</h2>
+              </div>
+              <span id="datasetDraftStatus" class="status status-neutral">Черновик не подготовлен</span>
+            </div>
+            <form id="datasetDraftForm">
+              <label for="datasetTarget">Куда применить запрос</label>
+              <select id="datasetTarget"><option value="">Создать новый датасет</option></select>
+              <label for="datasetRequest">Опишите, какие данные нужны</label>
+              <textarea id="datasetRequest" rows="3" maxlength="500" placeholder="Например: конверсия по менеджерам по неделям за текущий квартал без воронки «Тест»"></textarea>
+              <div class="editor-actions">
+                <button type="submit">Подготовить с BitrixGPT</button>
+                <p id="datasetDraftMessage" class="editor-message" aria-live="polite"></p>
+              </div>
+            </form>
+            <section id="datasetDraftPreview" class="dataset-preview" hidden>
+              <h3 id="datasetDraftTitle"></h3>
+              <p id="datasetDraftDescription" class="editor-message"></p>
+              <p id="datasetPlannerSummary" class="editor-message" hidden></p>
+              <div class="dataset-meta">
+                <p><strong>Источник:</strong> <span id="datasetDraftSource"></span></p>
+                <p><strong>Период:</strong> <span id="datasetDraftPeriod"></span></p>
+                <p><strong>Фильтры:</strong> <span id="datasetDraftFilters"></span></p>
+                <p><strong>Расчёт:</strong> <span id="datasetDraftFormula"></span></p>
+              </div>
+              <h3>Поля</h3>
+              <div id="datasetDraftFields" class="dataset-fields"></div>
+              <div class="editor-actions">
+                <button id="confirmDatasetDraft" type="button">Подтвердить черновик</button>
+                <p id="datasetConfirmMessage" class="editor-message" aria-live="polite"></p>
+              </div>
+              <section id="datasetPublishPanel" class="dataset-publish" hidden>
+                <h3>Публикация в BI-конструктор</h3>
+                <p id="datasetPublishReadiness" class="editor-message"></p>
+                <p id="datasetPublicationPreview">Сначала будет выполнено безопасное сравнение схемы с Битрикс24.</p>
+                <div class="editor-actions">
+                  <button id="publishDataset" type="button" disabled>Опубликовать в BI-конструктор</button>
+                  <p id="datasetPublishMessage" class="editor-message" aria-live="polite"></p>
+                </div>
+                <div class="dataset-sync-status">
+                  <strong>Синхронизация</strong>
+                  <p id="datasetSynchronization" class="editor-message">Статус adapter-а ещё не запрошен.</p>
+                  <button id="refreshDatasetSynchronization" type="button">Проверить синхронизацию</button>
+                  <button id="refreshDatasetData" type="button">Обновить данные сейчас</button>
+                </div>
+                <details class="dataset-delete">
+                  <summary>Удаление опубликованного датасета</summary>
+                  <p>Удаляется только текущий управляемый датасет с префиксом <code>vibecode_ai_</code>. Коннектор, источник, CRM и чужие датасеты не затрагиваются.</p>
+                  <div class="editor-actions">
+                    <button id="deleteDataset" class="danger-button" type="button">Удалить датасет</button>
+                    <p id="datasetDeleteMessage" class="editor-message" aria-live="polite"></p>
+                  </div>
+                </details>
+              </section>
+            </section>
+          </section>
+
         </section>
       </section>
     </main>
