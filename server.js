@@ -20,7 +20,7 @@ import { resolveCategoryExclusions } from "./lib/dashboard-rules.js";
 import { getBiConnectorData, getBiConnectorDescription, getBiConnectorTables } from "./lib/bi-connector-demo.js";
 import { buildDatasetDraft, confirmDatasetDraft, DatasetDraftError } from "./lib/dataset-draft.js";
 import { createDatasetPlannerRequest, DatasetPlannerError, parseDatasetPlannerResponse } from "./lib/dataset-planner.js";
-import { DatasetPublisherError, deleteDatasetDraft, getPublisherReadiness, previewDynamicDatasetPublication, publishDynamicDataset } from "./lib/dataset-publisher.js";
+import { DatasetPublisherError, deleteDatasetDraft, getPublisherReadiness, listPortalDatasetNames, previewDynamicDatasetPublication, publishDynamicDataset, reconcileManagedDatasets } from "./lib/dataset-publisher.js";
 import { AdapterControlClient } from "./lib/adapter-control-client.js";
 import { validateSpecCategoryNames } from "./lib/bitrix-crm-reader.js";
 import { buildDatasetDraftFromSpec } from "./lib/dataset-spec.js";
@@ -580,13 +580,31 @@ async function getDatasetPublisherReadiness(req, res) {
 
 async function listManagedDatasets(req, res) {
   if (!canEditDashboard(req, res)) return;
+  const adapterClient = createAdapterClient();
+  let records = [];
   try {
-    const payload = await createAdapterClient().list();
-    const datasets = (payload.result || [])
-      .filter((item) => item.status === "active")
-      .map((item) => ({ datasetName: item.datasetName, title: item.title, updatedAt: item.updatedAt, draft: rebuildManagedDraft(item) }));
-    return sendJson(res, 200, { datasets }, { "Cache-Control": "no-store" });
+    records = (await adapterClient.list()).result || [];
   } catch { return sendJson(res, 503, { error: "adapter_unavailable", message: "Не удалось получить список управляемых датасетов." }); }
+
+  // Набор могли удалить вручную в BI-конструкторе — реестр адаптера об этом не знает.
+  // Сверяем его с порталом и вычищаем записи, за которыми больше нет датасета.
+  let reconciled = { datasets: records.filter((item) => item.status === "active"), missing: [] };
+  let portalChecked = false;
+  try {
+    const { client } = await createPublisherContext(process.env.OAUTH_ADAPTER_STATE_PATH);
+    reconciled = reconcileManagedDatasets(records, await listPortalDatasetNames(client));
+    portalChecked = true;
+  } catch { /* портал недоступен — показываем реестр как есть, чтобы список не опустел */ }
+
+  if (portalChecked) {
+    for (const datasetName of reconciled.missing) {
+      try { await adapterClient.remove(datasetName); } catch { /* уборка не должна ломать выдачу списка */ }
+    }
+  }
+
+  const datasets = reconciled.datasets
+    .map((item) => ({ datasetName: item.datasetName, title: item.title, updatedAt: item.updatedAt, draft: rebuildManagedDraft(item) }));
+  return sendJson(res, 200, { datasets, reconciled: portalChecked, removed: reconciled.missing }, { "Cache-Control": "no-store" });
 }
 
 // Черновик управляемого набора восстанавливается из сохранённой спецификации,

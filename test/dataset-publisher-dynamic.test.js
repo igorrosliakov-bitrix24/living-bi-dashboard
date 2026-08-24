@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildDatasetDraftFromSpec } from "../lib/dataset-spec.js";
-import { buildDatasetSchemaDiff, previewDynamicDatasetPublication, publishDynamicDataset } from "../lib/dataset-publisher.js";
+import { buildDatasetSchemaDiff, listPortalDatasetNames, previewDynamicDatasetPublication, publishDynamicDataset, reconcileManagedDatasets } from "../lib/dataset-publisher.js";
 
 function matchingBitrixFields(source) {
   const types = { integer: "int", string: "string", float: "double", date: "date", datetime: "datetime" };
@@ -161,4 +161,26 @@ test("неудачная первая публикация убирает зап
   await assert.rejects(() => publishDynamicDataset({ draft: draft, client, connectorBaseUrl: "https://adapter.example.com", adapterClient }), /REST отказал/);
   assert.ok(adapterCalls.includes(`remove:${draft.datasetName}`), "черновая запись должна быть удалена");
   assert.ok(!adapterCalls.some((c) => c.startsWith("fail:")));
+});
+
+test("сверка убирает из списка наборы, удалённые в портале вручную", () => {
+  const records = [
+    { datasetName: "vibecode_ai_alive", status: "active" },
+    { datasetName: "vibecode_ai_gone", status: "active" },
+    { datasetName: "vibecode_ai_draft", status: "staged" }
+  ];
+
+  const result = reconcileManagedDatasets(records, ["vibecode_ai_alive", "чужой_набор"]);
+
+  assert.deepEqual(result.datasets.map((item) => item.datasetName), ["vibecode_ai_alive"]);
+  assert.deepEqual(result.missing, ["vibecode_ai_gone"]);
+});
+
+test("сверка не падает на пустом реестре и пустом портале", () => {
+  assert.deepEqual(reconcileManagedDatasets(undefined, undefined), { datasets: [], missing: [] });
+});
+
+test("имена наборов из портала читаются без пустых значений", async () => {
+  const client = { call: async () => [{ id: 1, name: "vibecode_ai_alive" }, { id: 2 }] };
+  assert.deepEqual(await listPortalDatasetNames(client), ["vibecode_ai_alive"]);
 });
