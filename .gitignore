@@ -9,3 +9,8 @@ coverage/
 
 # Тяжёлые материалы статей держим вне репозитория
 docs/article-materials/*.pdf
+
+# Рабочие материалы: находки прогона, отчёты и черновики статей
+docs/DYNAMIC_PUBLISHER_TEST_FINDINGS.md
+docs/PLATFORM_LIMITS_REPORT.md
+docs/ARTICLE_2_SECTIONS_DRAFT.md
