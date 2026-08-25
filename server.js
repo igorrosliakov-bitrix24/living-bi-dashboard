@@ -533,10 +533,14 @@ async function previewDatasetWithAi(req, res) {
     const headers = resolveVibeHeaders(req);
     if (!headers) return sendGatewayRequired(res);
 
+    // Состав выбранного набора нужен модели до вызова: без него «добавь поле»
+    // строит спецификацию с нуля и удаляет прежние метрики.
+    const target = body?.targetDatasetName ? await findManagedDataset(body.targetDatasetName) : null;
+
     const response = await fetch(`${apiBase}/v1/chat/completions`, {
       method: "POST",
       headers: { ...headers, "Content-Type": "application/json" },
-      body: JSON.stringify(createDatasetPlannerRequest(body?.request)),
+      body: JSON.stringify(createDatasetPlannerRequest(body?.request, target?.spec)),
       signal: AbortSignal.timeout(20_000)
     });
     const payload = await readJson(response);
@@ -545,10 +549,7 @@ async function previewDatasetWithAi(req, res) {
     }
 
     const result = parseDatasetPlannerResponse(payload, body?.request);
-    if (result.kind === "draft" && body?.targetDatasetName) {
-      const managed = await createAdapterClient().list();
-      const target = managed.result?.find((item) => item.datasetName === body.targetDatasetName && item.status === "active");
-      if (!target) throw new DatasetPlannerError("unknown_dataset_target", "Выбранный управляемый датасет не найден.");
+    if (result.kind === "draft" && target) {
       result.draft.datasetName = target.datasetName;
     }
     return sendJson(res, 200, result.kind === "draft" ? { draft: result.draft } : { development: result.development }, { "Cache-Control": "no-store" });
@@ -576,6 +577,13 @@ async function getDatasetPublisherReadiness(req, res) {
   if (!canEditDashboard(req, res)) return;
   const readiness = await getDatasetPublisherReadinessForEnvironment();
   return sendJson(res, 200, { readiness }, { "Cache-Control": "no-store" });
+}
+
+async function findManagedDataset(datasetName) {
+  const managed = await createAdapterClient().list();
+  const target = (managed.result || []).find((item) => item.datasetName === datasetName && item.status === "active");
+  if (!target) throw new DatasetPlannerError("unknown_dataset_target", "Выбранный управляемый датасет не найден.");
+  return target;
 }
 
 async function listManagedDatasets(req, res) {

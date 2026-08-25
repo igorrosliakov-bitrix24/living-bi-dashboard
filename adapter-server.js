@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
-import { getBiConnectorData, getBiConnectorDescription, getBiConnectorTables } from "./lib/bi-connector-demo.js";
+import { biConnectorDemo, getBiConnectorData, getBiConnectorDescription, getBiConnectorTables } from "./lib/bi-connector-demo.js";
 import { parseConnectorForm } from "./lib/connector-request.js";
 import { dealIntakeTable, loadDealIntakeDataset, selectDealIntakeRows } from "./lib/deal-intake-dataset.js";
 import { TtlCache } from "./lib/ttl-cache.js";
@@ -12,7 +12,7 @@ import { assertControlMethodAllowed, assertManagedDatasetName, describeOwnership
 import { DatasetRegistry } from "./lib/dataset-registry.js";
 import { buildDatasetDraftFromSpec } from "./lib/dataset-spec.js";
 import { loadDealDataset, selectDealDatasetRows } from "./lib/deal-dataset-engine.js";
-import { getDynamicDescription, mergeDynamicTables } from "./lib/dynamic-adapter.js";
+import { getDynamicDescription, mergeDynamicTables, resolveTableAvailability } from "./lib/dynamic-adapter.js";
 import { createBitrixRestClient } from "./lib/bitrix-rest.js";
 import { listDealCategories } from "./lib/bitrix-crm-reader.js";
 
@@ -126,8 +126,10 @@ createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/bi-connector/table-description") {
       const request = await readConnectorBody(req);
       await logConnectorRequest(url.pathname, request);
-      await connectorStatus.recordSuccess({ table: request.body.table || request.body.name });
       const table = request.body.table || request.body.name;
+      const availability = resolveTableAvailability(table, datasetRegistry.get(table), staticTableCodes);
+      if (!availability.available) return sendConnectorFailure(res, table, availability);
+      await connectorStatus.recordSuccess({ table });
       const dynamic = getDynamicDescription(datasetRegistry.get(table));
       return sendJson(res, 200, dynamic.length ? dynamic : getBiConnectorDescription(table));
     }
@@ -140,8 +142,10 @@ createServer(async (req, res) => {
         await connectorStatus.recordSuccess({ table: request.body.table });
         return sendJson(res, 200, result);
       }
-      if (["active", "pending"].includes(datasetRegistry.get(request.body.table)?.status)) {
-        const record = datasetRegistry.get(request.body.table);
+      const record = datasetRegistry.get(request.body.table);
+      const availability = resolveTableAvailability(request.body.table, record, staticTableCodes);
+      if (!availability.available) return sendConnectorFailure(res, request.body.table, availability);
+      if (availability.kind === "dynamic") {
         const snapshot = await getDynamicSnapshot(request.body.table);
         const draft = buildDatasetDraftFromSpec(record.spec, { request: record.spec.request });
         const result = selectDealDatasetRows(snapshot.rows, draft, request.body);
@@ -183,6 +187,15 @@ createServer(async (req, res) => {
     return sendJson(res, 400, { ok: false, error: "invalid_request" });
   }
 }).listen(port, host, () => console.info(`OAuth adapter listening on ${host}:${port}`));
+
+const staticTableCodes = [biConnectorDemo.table.code, dealIntakeTable.code];
+
+// Отказ по таблице отмечается как сбой коннектора и возвращается с настоящим
+// кодом: пустой ответ с HTTP 200 выглядел бы как работающий, но пустой график.
+async function sendConnectorFailure(res, table, availability) {
+  await connectorStatus.recordError(availability.code, { table });
+  return sendJson(res, 400, { ok: false, error: availability.code, message: availability.message });
+}
 
 async function saveAuth(auth) {
   const record = {

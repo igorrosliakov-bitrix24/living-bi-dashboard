@@ -15,3 +15,16 @@ test("connector status persists a successful BI request without row values", asy
   assert.equal(restored.snapshot().requests, 1);
   assert.ok(restored.snapshot().lastSuccessAt);
 });
+
+test("отказ по таблице записывается рядом с её успехами", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "living-bi-status-"));
+  const store = await ConnectorStatusStore.open({ statusPath: join(directory, "status.json") });
+  await store.recordSuccess({ table: "vibecode_ai_deal_won_weekly" });
+  await store.recordError("dataset_not_available", { table: "vibecode_ai_deal_won_weekly" });
+
+  const snapshot = store.snapshot();
+  assert.equal(snapshot.lastErrorCode, "dataset_not_available");
+  assert.equal(snapshot.lastTable, "vibecode_ai_deal_won_weekly");
+  assert.equal(snapshot.datasets.vibecode_ai_deal_won_weekly.lastErrorCode, "dataset_not_available");
+  assert.equal(snapshot.datasets.vibecode_ai_deal_won_weekly.requests, 2);
+});
